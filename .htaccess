@@ -1,0 +1,32 @@
+# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION BEGIN
+PassengerAppRoot "/home/business/nb-switch-serverz.mojaloop.xyz"
+PassengerBaseURI "/"
+PassengerNodejs "/home/business/nodevenv/nb-switch-serverz.mojaloop.xyz/22/bin/node"
+PassengerAppType node
+PassengerStartupFile src/app.js
+# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION END
+# DO NOT REMOVE OR MODIFY. CLOUDLINUX ENV VARS CONFIGURATION BEGIN
+<IfModule Litespeed>
+SetEnv ALS_URL mail.saskarentpay.xdomainhost.com
+SetEnv CENTRAL_LEDGER_URL https://ledger.mojaloop.xyz
+SetEnv DB_HOST localhost
+SetEnv DB_NAME business_r_switch
+SetEnv DB_PASSWORD ndiaJwV?Bpi,3bkn
+SetEnv DB_PORT 3306
+SetEnv DB_USER business_r_switch
+SetEnv DFSP_PORTAL_URL https://dfsp.mojaloop.xyz
+SetEnv JWT_EXPIRES_IN 365d
+SetEnv JWT_SECRET argg3443ygrthrthrtu65yjj
+SetEnv KAFKA_BROKER 95.111.247.250:31207
+SetEnv KAFKA_CLIENT_ID r-switch-portal
+SetEnv KAFKA_GROUP_ID r-switch-db-saver
+SetEnv NODE_ENV production
+SetEnv PORT 4000
+SetEnv SETTLEMENT_URL https://settlement.mojaloop.xyz/v2
+SetEnv SMTP_HOST mail.saskarentpay.xdomainhost.com
+SetEnv SMTP_PORT 465
+SetEnv SMTP_USER admin@saskarentpay.xdomainhost.com
+SetEnv SMTP_FROM "R Switch Portal" <admin@saskarentpay.xdomainhost.com>
+SetEnv SMTP_PASS Z7W!KZi@bKvh[&)8
+</IfModule>
+# DO NOT REMOVE OR MODIFY. CLOUDLINUX ENV VARS CONFIGURATION END
