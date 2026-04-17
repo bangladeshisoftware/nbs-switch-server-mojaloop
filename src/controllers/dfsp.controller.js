@@ -143,6 +143,16 @@ exports.getDfsps = async (req, res) => {
   }
 }
 
+
+exports.getMiniDfspsData = async (req, res) => {
+  try {
+    const [rows] = await pool.execute(`SELECT dfsp_id AS value, name AS label FROM dfsps ORDER BY name ASC`)
+    res.json({ data: rows })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+}
+
 // ════════════════════════════════════════════════════════════
 //  GET /dfsps/:dfspId
 // ════════════════════════════════════════════════════════════

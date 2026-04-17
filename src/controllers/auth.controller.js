@@ -170,6 +170,62 @@ exports.verify_otp = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+exports.getDFSPToken = async (req, res) => {
+  try {
+    const { dfsp_id } = req.body;
+
+    // Validate input
+    if (!dfsp_id) {
+      return res.status(400).json({ error: 'DFSP id is required' });
+    }
+
+    // Fetch user
+    const [rows] = await pool.execute(
+      `SELECT * FROM dfsp_users WHERE dfsp_id = ?`,
+      [dfsp_id]
+    );
+
+    const user = rows[0];
+
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid DFSP ID' });
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      {
+        id: user.id,
+        dfsp_id: user.dfsp_id,
+        username: user.username,
+        role: user.role,
+      },
+      "wreta9483kargorgargarragaerg555ht",
+      {
+        expiresIn: process.env.JWT_EXPIRES_IN || '365d',
+      }
+    );
+
+    // Store token in DB (optional, depending on your auth design)
+    await pool.execute(
+      `UPDATE dfsp_users SET token = ?, last_login = NOW() WHERE id = ?`,
+      [token, user.id]
+    );
+
+    // Send response
+    return res.status(200).json({
+      success: true,
+      token,
+    });
+
+  } catch (err) {
+    console.error('getDFSPToken error:', err);
+
+    return res.status(500).json({
+      error: 'Internal server error',
+    });
+  }
+};
 // GET /auth/users
 exports.getUsers = async (req, res) => {
   try {
