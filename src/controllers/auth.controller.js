@@ -24,7 +24,7 @@ exports.login = async (req, res) => {
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
-    // ── OTP generate করো ─────────────────────────────────
+    // Generate OTP.
     const otp = Math.floor(100000 + Math.random() * 900000);
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
 
@@ -42,18 +42,14 @@ exports.login = async (req, res) => {
           otp,
         });
         emailSent = true;
-        console.log(`[AUTH] OTP sent to ${user.email}`);
       } catch (emailErr) {
-        console.error(`[AUTH] Email failed: ${emailErr.message}`);
-        if (process.env.NODE_ENV !== 'production') {
-          console.log(`🔑 [DEV] OTP for ${user.username}: ${otp}`);
-        }
+        // console.error(`failed: ${emailErr.message}`);
+        // if (process.env.NODE_ENV !== 'production') {
+        //   console.log(`${otp}`);
+        // }
       }
     } else {
-      console.warn(`⚠️ [AUTH] No email for user ${user.username}`);
-      if (process.env.NODE_ENV !== 'production') {
-        console.log(`🔑 [DEV] OTP for ${user.username}: ${otp}`);
-      }
+      res.status(400).json({ message: 'user not found!' });
     }
 
     res.json({
@@ -66,13 +62,14 @@ exports.login = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-/*
+
 exports.verify_otp = async (req, res) => {
   try {
     const { username, otp } = req.body;
     if (!username || !otp)
       return res.status(400).json({ error: 'Username and OTP required' });
 
+    // check user with OTP
     const [rows] = await pool.execute(
       `SELECT * FROM users
        WHERE (username = ? OR email = ?) AND is_active = 1 AND otp = ?`,
@@ -82,9 +79,28 @@ exports.verify_otp = async (req, res) => {
     const user = rows[0];
     if (!user) return res.status(401).json({ error: 'Invalid OTP' });
 
+    // update otp.
     await pool.execute(
       `UPDATE users SET otp = NULL, otp_expires_at = NULL, last_login = NOW() WHERE id = ?`,
       [user.id],
+    );
+
+    // activity log
+    let ip =
+      req.headers['x-forwarded-for'] ||
+      req.connection.remoteAddress ||
+      'unknown';
+    if (ip.includes(',')) ip = ip.split(',')[0].trim();
+
+    const geo = geoip.lookup(ip);
+    const location = geo
+      ? `${geo.city || 'Unknown City'}, ${geo.country || 'Unknown Country'}`
+      : 'Unknown';
+
+    await pool.execute(
+      `INSERT INTO activity_logs (username, email, login_time, ip_address, location, type)
+       VALUES (?, ?, NOW(), ?, ?, ?)`,
+      [user.username, user.email, ip, location, 'switch'],
     );
 
     const token = jwt.sign(
@@ -93,8 +109,6 @@ exports.verify_otp = async (req, res) => {
       { expiresIn: process.env.JWT_EXPIRES_IN || '24h' },
     );
 
-    console.log(`✅ [AUTH] User logged in: ${user.username}`);
-
     res.json({
       token,
       user: {
@@ -105,68 +119,6 @@ exports.verify_otp = async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('verify_otp error:', err);
-    res.status(500).json({ error: err.message });
-  }
-};
-*/
-exports.verify_otp = async (req, res) => {
-  try {
-    const { username, otp } = req.body;
-    if (!username || !otp)
-      return res.status(400).json({ error: 'Username and OTP required' });
-
-    // Fetch user with OTP
-    const [rows] = await pool.execute(
-      `SELECT * FROM users
-       WHERE (username = ? OR email = ?) AND is_active = 1 AND otp = ?`,
-      [username, username, otp]
-    );
-
-    const user = rows[0];
-    if (!user) return res.status(401).json({ error: 'Invalid OTP' });
-
-    // Clear OTP and update last login
-    await pool.execute(
-      `UPDATE users SET otp = NULL, otp_expires_at = NULL, last_login = NOW() WHERE id = ?`,
-      [user.id]
-    );
-
-    // Get real client IP (behind proxy if any)
-    let ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown';
-    if (ip.includes(',')) ip = ip.split(',')[0].trim();
-
-    // Lookup location using geoip-lite
-    const geo = geoip.lookup(ip);
-    const location = geo
-      ? `${geo.city || 'Unknown City'}, ${geo.country || 'Unknown Country'}`
-      : 'Unknown';
-
-    // Insert login activity
-    await pool.execute(
-      `INSERT INTO activity_logs (username, email, login_time, ip_address, location, type)
-       VALUES (?, ?, NOW(), ?, ?, ?)`,
-      [user.username, user.email, ip, location, 'switch']
-    );
-
-    // Generate JWT
-    const token = jwt.sign(
-      { id: user.id, username: user.username, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
-    );
-
-    res.json({
-      token,
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        role: user.role
-      }
-    });
-  } catch (err) {
-    console.error('verify_otp error:', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -174,16 +126,13 @@ exports.verify_otp = async (req, res) => {
 exports.getDFSPToken = async (req, res) => {
   try {
     const { dfsp_id } = req.body;
-
-    // Validate input
     if (!dfsp_id) {
       return res.status(400).json({ error: 'DFSP id is required' });
     }
 
-    // Fetch user
     const [rows] = await pool.execute(
       `SELECT * FROM dfsp_users WHERE dfsp_id = ?`,
-      [dfsp_id]
+      [dfsp_id],
     );
 
     const user = rows[0];
@@ -192,7 +141,6 @@ exports.getDFSPToken = async (req, res) => {
       return res.status(401).json({ error: 'Invalid DFSP ID' });
     }
 
-    // Generate JWT token
     const token = jwt.sign(
       {
         id: user.id,
@@ -200,33 +148,28 @@ exports.getDFSPToken = async (req, res) => {
         username: user.username,
         role: user.role,
       },
-      "wreta9483kargorgargarragaerg555ht",
+      'wreta9483kargorgargarragaerg555ht',
       {
         expiresIn: process.env.JWT_EXPIRES_IN || '365d',
-      }
+      },
     );
-
-    // Store token in DB (optional, depending on your auth design)
+    
     await pool.execute(
       `UPDATE dfsp_users SET token = ?, last_login = NOW() WHERE id = ?`,
-      [token, user.id]
+      [token, user.id],
     );
 
-    // Send response
     return res.status(200).json({
       success: true,
       token,
     });
-
   } catch (err) {
-    console.error('getDFSPToken error:', err);
-
     return res.status(500).json({
       error: 'Internal server error',
     });
   }
 };
-// GET /auth/users
+
 exports.getUsers = async (req, res) => {
   try {
     const [rows] = await pool.execute(
@@ -238,7 +181,6 @@ exports.getUsers = async (req, res) => {
   }
 };
 
-// POST /auth/users
 exports.createUser = async (req, res) => {
   try {
     const { username, email, password, role } = req.body;
@@ -259,7 +201,6 @@ exports.createUser = async (req, res) => {
   }
 };
 
-// PUT /auth/users/:id
 exports.updateUser = async (req, res) => {
   try {
     const { id } = req.params;

@@ -1,35 +1,28 @@
-
-
 const nodemailer = require('nodemailer');
 
-// ════════════════════════════════════════════════════════════
 //  EMAIL TRANSPORTER
-//  .env এ এই variables লাগবে:
-//  SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM
-// ════════════════════════════════════════════════════════════
 function createTransporter() {
   const port = parseInt(process.env.SMTP_PORT || '465');
 
   return nodemailer.createTransport({
-    host:   process.env.SMTP_HOST,
-    port:   port,
+    host: process.env.SMTP_HOST,
+    port: port,
     secure: port === 465,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
-    family: 4,                        // ← IPv4 force (cPanel এ must)
-    tls:    { rejectUnauthorized: false }, // ← self-signed cert allow
+    family: 4,
+    tls: { rejectUnauthorized: false },
     connectionTimeout: 15000,
-    greetingTimeout:   10000,
-    socketTimeout:     15000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
   });
 }
 
-//  BASE SEND EMAIL FUNCTION (reusable)
+//  Base send email function.
 async function sendEmail({ to, subject, html, text }) {
   if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.warn('[EMAIL] SMTP_USER or SMTP_PASS not set — email skipped');
     return { skipped: true, reason: 'SMTP not configured' };
   }
 
@@ -37,8 +30,8 @@ async function sendEmail({ to, subject, html, text }) {
 
   const mailOptions = {
     from:
-      //process.env.SMTP_FROM || `"R Switch Portal" <${process.env.SMTP_USER}>`
-      '"R Switch Portal" <admin@saskarentpay.xdomainhost.com>',
+      process.env.SMTP_FROM ||
+      `"R Switch Portal" <${process.env.SMTP_USER || 'smtpuser@gmail.com'}>`,
     to,
     subject,
     html,
@@ -47,10 +40,8 @@ async function sendEmail({ to, subject, html, text }) {
 
   try {
     const info = await transporter.sendMail(mailOptions);
-    console.log(`[EMAIL] Sent to ${to} | MessageId: ${info.messageId}`);
     return { success: true, messageId: info.messageId };
   } catch (err) {
-    console.error(`[EMAIL] Failed to send to ${to}: ${err.message}`);
     throw err;
   }
 }
@@ -200,8 +191,8 @@ background-image: linear-gradient(120deg, #a1c4fd 0%, #c2e9fb 100%);
         </div>
 
         <div class="warning">
-          ⏱ This OTP is valid for <strong>10 minutes</strong> only.<br/>
-          🔐 Never share this code with anyone.<br/>
+          This OTP is valid for <strong>10 minutes</strong> only.<br/>
+           Never share this code with anyone.<br/>
           If you did not request this login, please ignore this email or contact support immediately.
         </div>
 
@@ -240,7 +231,7 @@ async function sendSettlementEmail({ to, dfspName, dfspId, settlementData }) {
   } = settlementData;
 
   const netColor = netPosition >= 0 ? '#00cc44' : '#ff4444';
-  const netLabel = netPosition >= 0 ? '▲ Receivable' : '▼ Payable';
+  const netLabel = netPosition >= 0 ? 'Receivable' : 'Payable';
   const netAbs = Math.abs(netPosition).toLocaleString('en-US', {
     minimumFractionDigits: 2,
   });
@@ -417,13 +408,11 @@ async function sendSettlementEmailsToAll({
   const emailResults = [];
 
   try {
-    // সব DFSP info DB থেকে নাও (email সহ)
     const [dfsps] = await pool.execute(
       `SELECT dfsp_id, name, currency, email FROM dfsps WHERE email IS NOT NULL AND email != ''`,
     );
 
     if (dfsps.length === 0) {
-      console.warn('[SETTLEMENT EMAIL] No DFSPs with email found');
       return emailResults;
     }
 
@@ -431,7 +420,6 @@ async function sendSettlementEmailsToAll({
 
     for (const dfsp of dfsps) {
       try {
-        // এই DFSP এর transfer stats নাও
         const [[stats]] = await pool.execute(
           `
           SELECT
@@ -446,7 +434,6 @@ async function sendSettlementEmailsToAll({
           [dfsp.dfsp_id, dfsp.dfsp_id, dfsp.dfsp_id, dfsp.dfsp_id],
         );
 
-        // Position নাও
         const [[pos]] = await pool.execute(
           `
           SELECT current_position, net_debit_cap
@@ -484,9 +471,6 @@ async function sendSettlementEmailsToAll({
           email: dfsp.email,
           status: 'sent',
         });
-        console.log(
-          `[SETTLEMENT EMAIL] Sent to ${dfsp.dfsp_id} <${dfsp.email}>`,
-        );
       } catch (e) {
         emailResults.push({
           dfsp_id: dfsp.dfsp_id,
@@ -494,13 +478,10 @@ async function sendSettlementEmailsToAll({
           status: 'failed',
           error: e.message,
         });
-        console.error(
-          `[SETTLEMENT EMAIL] Failed for ${dfsp.dfsp_id}: ${e.message}`,
-        );
       }
     }
   } catch (e) {
-    console.error(`[SETTLEMENT EMAIL] Fatal: ${e.message}`);
+    // skip.
   }
 
   return emailResults;

@@ -1,6 +1,5 @@
 const { pool } = require('../config/db');
 
-// GET /transfers?status=&page=&limit=&from=&to=&payer_fsp=&payee_fsp=&currency=
 exports.getTransfers = async (req, res) => {
   try {
     const {
@@ -50,7 +49,6 @@ exports.getTransfers = async (req, res) => {
   }
 };
 
-// GET /transfers/:transferId
 exports.getTransferById = async (req, res) => {
   try {
     const { transferId } = req.params;
@@ -74,7 +72,6 @@ exports.getTransferById = async (req, res) => {
   }
 };
 
-// GET /transfers/stats
 exports.getStats = async (req, res) => {
   try {
     const { currency, from, to } = req.query;

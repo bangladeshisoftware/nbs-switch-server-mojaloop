@@ -1,9 +1,5 @@
 const { pool } = require('../config/db');
 
-// ════════════════════════════════════════════════════════════
-//  GET /activity-logs
-//  Query params: type, username, page, limit, from, to
-// ════════════════════════════════════════════════════════════
 exports.getLogs = async (req, res) => {
   try {
     const {
@@ -51,9 +47,7 @@ exports.getLogs = async (req, res) => {
   }
 };
 
-// ════════════════════════════════════════════════════════════
-//  GET /activity-logs/stats — summary counts
-// ════════════════════════════════════════════════════════════
+
 exports.getStats = async (req, res) => {
   try {
     const [[stats]] = await pool.execute(`
@@ -66,7 +60,7 @@ exports.getStats = async (req, res) => {
         SUM(CASE WHEN DATE(login_time) = CURDATE() THEN 1 ELSE 0 END) AS today
     FROM activity_logs`);
 
-    // Last 7 days breakdown
+    // Last 7 days
     const [daily] = await pool.execute(`
       SELECT
         DATE(login_time)                                    AS date,

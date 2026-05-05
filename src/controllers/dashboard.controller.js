@@ -1,6 +1,5 @@
 const { pool } = require('../config/db');
 
-// GET /dashboard/summary
 exports.getSummary = async (req, res) => {
   try {
     const { from, to, currency } = req.query;
@@ -12,7 +11,6 @@ exports.getSummary = async (req, res) => {
       values.push(from, to);
     }
 
-    // Total counts by status
     const [statusCounts] = await pool.execute(`
       SELECT 
         COUNT(*) as total,
@@ -25,7 +23,6 @@ exports.getSummary = async (req, res) => {
       FROM transfers ${dateFilter}`, values
     );
 
-    // Total volume by currency
     const [volumes] = await pool.execute(`
       SELECT currency, 
         SUM(amount) as total_volume,
@@ -35,7 +32,6 @@ exports.getSummary = async (req, res) => {
       GROUP BY currency`, dateFilter ? values : []
     );
 
-    // Transfers per hour (last 24h)
     const [hourly] = await pool.execute(`
       SELECT 
         DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00') as hour,
@@ -47,7 +43,6 @@ exports.getSummary = async (req, res) => {
       GROUP BY hour ORDER BY hour ASC`
     );
 
-    // Top DFSPs by volume
     const [topDfsps] = await pool.execute(`
       SELECT payer_fsp as dfsp, COUNT(*) as sent, SUM(amount) as volume
       FROM transfers WHERE status = 'COMMITTED'

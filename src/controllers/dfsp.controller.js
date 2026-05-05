@@ -1,166 +1,170 @@
-const { pool } = require('../config/db')
-const { v4: uuidv4 } = require('uuid')
-const axios = require('axios')
-const bcrypt = require('bcryptjs') // FIX Bug 5: top-level import করতে হবে
-const { sendEmail } = require('../services/email.service')
+const { pool } = require('../config/db');
+const { v4: uuidv4 } = require('uuid');
+const axios = require('axios');
+const bcrypt = require('bcryptjs');
+const { sendEmail } = require('../services/email.service');
 
-const CENTRAL_LEDGER = process.env.CENTRAL_LEDGER_URL || 'http://ledger.mojaloop.xyz'
-const ALS_URL = process.env.ALS_URL || 'http://als.mojaloop.xyz'
+const CENTRAL_LEDGER =
+  process.env.CENTRAL_LEDGER_URL || 'http://your-ledger.domain.com';
+const ALS_URL = process.env.ALS_URL || 'http://your-als.domain.com';
 
-// ════════════════════════════════════════════════════════════
-//  CENTRAL LEDGER API HELPERS
-// ════════════════════════════════════════════════════════════
+/////////////////  CENTRAL LEDGER API HELPERS /////////////////
 
-// Step 1: Participant create করো Central Ledger এ
 async function clCreateParticipant(dfspId, currency) {
   const res = await axios.post(
     `${CENTRAL_LEDGER}/participants`,
     { name: dfspId, currency },
     {
-      headers: { 'Content-Type': 'application/json', 'fspiop-source': 'NOT_APPLICABLE' }
-    }
-  )
-  return res.data
+      headers: {
+        'Content-Type': 'application/json',
+        'fspiop-source': 'NOT_APPLICABLE',
+      },
+    },
+  );
+  return res.data;
 }
 
-// Step 2: Settlement Account create করো
-// FIX Bug 1: { currency, initialPosition } allowed নয়
-//            → { type: 'SETTLEMENT', currency } দিতে হবে
 async function clSetInitialPosition(dfspId, currency) {
   const res = await axios.post(
     `${CENTRAL_LEDGER}/participants/${dfspId}/accounts`,
     { type: 'SETTLEMENT', currency },
     {
-      headers: { 'Content-Type': 'application/json', 'FSPIOP-Source': dfspId }
-    }
-  )
-  return res.data
+      headers: { 'Content-Type': 'application/json', 'FSPIOP-Source': dfspId },
+    },
+  );
+  return res.data;
 }
 
-// Step 3: Callback endpoints register করো
 async function clRegisterEndpoints(dfspId, callbackUrl) {
   const endpoints = [
     {
       type: 'FSPIOP_CALLBACK_URL_TRANSFER_POST',
-      value: `${callbackUrl}/transfers`
+      value: `${callbackUrl}/transfers`,
     },
     {
       type: 'FSPIOP_CALLBACK_URL_TRANSFER_PUT',
-      value: `${callbackUrl}/transfers/{{transferId}}`
+      value: `${callbackUrl}/transfers/{{transferId}}`,
     },
     {
       type: 'FSPIOP_CALLBACK_URL_TRANSFER_ERROR',
-      value: `${callbackUrl}/transfers/{{transferId}}/error`
+      value: `${callbackUrl}/transfers/{{transferId}}/error`,
     },
     {
       type: 'FSPIOP_CALLBACK_URL_QUOTES',
-      value: `${callbackUrl}` // FIX Bug 6: /quotes path ছিল না
+      value: `${callbackUrl}`,
     },
     {
       type: 'FSPIOP_CALLBACK_URL_BULK_QUOTES',
-      value: `${callbackUrl}/bulkQuotes`
+      value: `${callbackUrl}/bulkQuotes`,
     },
     {
       type: 'FSPIOP_CALLBACK_URL_BULK_TRANSFER_POST',
-      value: `${callbackUrl}/bulkTransfers`
+      value: `${callbackUrl}/bulkTransfers`,
     },
     {
       type: 'FSPIOP_CALLBACK_URL_BULK_TRANSFER_PUT',
-      value: `${callbackUrl}/bulkTransfers/{{id}}`
+      value: `${callbackUrl}/bulkTransfers/{{id}}`,
     },
     {
       type: 'FSPIOP_CALLBACK_URL_BULK_TRANSFER_ERROR',
-      value: `${callbackUrl}/bulkTransfers/{{id}}/error`
+      value: `${callbackUrl}/bulkTransfers/{{id}}/error`,
     },
     {
       type: 'FSPIOP_CALLBACK_URL_PARTIES_GET',
-      value: `${callbackUrl}/parties/{{partyIdType}}/{{partyIdentifier}}`
+      value: `${callbackUrl}/parties/{{partyIdType}}/{{partyIdentifier}}`,
     },
     {
       type: 'FSPIOP_CALLBACK_URL_PARTIES_PUT',
-      value: `${callbackUrl}/parties/{{partyIdType}}/{{partyIdentifier}}`
+      value: `${callbackUrl}/parties/{{partyIdType}}/{{partyIdentifier}}`,
     },
     {
       type: 'FSPIOP_CALLBACK_URL_PARTIES_PUT_ERROR',
-      value: `${callbackUrl}/parties/{{partyIdType}}/{{partyIdentifier}}/error`
+      value: `${callbackUrl}/parties/{{partyIdType}}/{{partyIdentifier}}/error`,
     },
     {
       type: 'FSPIOP_CALLBACK_URL_PARTICIPANT_PUT',
-      value: `${callbackUrl}/participants/{{partyIdType}}/{{partyIdentifier}}`
+      value: `${callbackUrl}/participants/{{partyIdType}}/{{partyIdentifier}}`,
     },
     {
       type: 'FSPIOP_CALLBACK_URL_PARTICIPANT_PUT_ERROR',
-      value: `${callbackUrl}/participants/{{partyIdType}}/{{partyIdentifier}}/error`
-    }
-  ]
+      value: `${callbackUrl}/participants/{{partyIdType}}/{{partyIdentifier}}/error`,
+    },
+  ];
 
-  const results = []
+  const results = [];
   for (const ep of endpoints) {
     try {
-      await axios.post(`${CENTRAL_LEDGER}/participants/${dfspId}/endpoints`, ep, {
-        headers: {
-          'Content-Type': 'application/json',
-          'fspiop-source': 'switch'
-        }
-      })
-      results.push({ type: ep.type, status: 'ok' })
+      await axios.post(
+        `${CENTRAL_LEDGER}/participants/${dfspId}/endpoints`,
+        ep,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'fspiop-source': 'switch',
+          },
+        },
+      );
+      results.push({ type: ep.type, status: 'ok' });
     } catch (e) {
       results.push({
         type: ep.type,
         status: 'failed',
-        error: e.response?.data || e.message
-      })
+        error: e.response?.data || e.message,
+      });
     }
   }
-  return results
+  return results;
 }
 
-// Step 4: Net Debit Cap set করো
-// FIX Bug 2: axios.post → axios.put (Central Ledger এ PUT method লাগে)
 async function clSetNetDebitCap(dfspId, currency, limit = '10000') {
   const res = await axios.post(
     `${CENTRAL_LEDGER}/participants/${dfspId}/initialPositionAndLimits`,
-    { currency:currency || 'BDT', limit: { type: 'NET_DEBIT_CAP', value: parseFloat(limit) }, initialPosition: 0 },
+    {
+      currency: currency || 'BDT',
+      limit: { type: 'NET_DEBIT_CAP', value: parseFloat(limit) },
+      initialPosition: 0,
+    },
     {
       headers: {
         'Content-Type': 'application/json',
-        'fspiop-source': dfspId
-      }
-    }
-  )
-  return res.data
+        'fspiop-source': dfspId,
+      },
+    },
+  );
+  return res.data;
 }
 
-// ════════════════════════════════════════════════════════════
-//  GET /dfsps
-// ════════════════════════════════════════════════════════════
+// All DFSP'S
 exports.getDfsps = async (req, res) => {
   try {
-    const [rows] = await pool.execute(`SELECT * FROM dfsps ORDER BY name ASC`)
-    res.json({ data: rows })
+    const [rows] = await pool.execute(`SELECT * FROM dfsps ORDER BY name ASC`);
+    res.json({ data: rows });
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    res.status(500).json({ error: err.message });
   }
-}
+};
 
-
+// dropdown box data
 exports.getMiniDfspsData = async (req, res) => {
   try {
-    const [rows] = await pool.execute(`SELECT dfsp_id AS value, name AS label FROM dfsps ORDER BY name ASC`)
-    res.json({ data: rows })
+    const [rows] = await pool.execute(
+      `SELECT dfsp_id AS value, name AS label FROM dfsps ORDER BY name ASC`,
+    );
+    res.json({ data: rows });
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    res.status(500).json({ error: err.message });
   }
-}
+};
 
-// ════════════════════════════════════════════════════════════
-//  GET /dfsps/:dfspId
-// ════════════════════════════════════════════════════════════
+// DFSP Details
 exports.getDfspById = async (req, res) => {
   try {
-    const { dfspId } = req.params
-    const [[dfsp]] = await pool.execute(`SELECT * FROM dfsps WHERE dfsp_id = ?`, [dfspId])
-    if (!dfsp) return res.status(404).json({ error: 'DFSP not found' })
+    const { dfspId } = req.params;
+    const [[dfsp]] = await pool.execute(
+      `SELECT * FROM dfsps WHERE dfsp_id = ?`,
+      [dfspId],
+    );
+    if (!dfsp) return res.status(404).json({ error: 'DFSP not found' });
 
     const [[stats]] = await pool.execute(
       `SELECT
@@ -170,41 +174,40 @@ exports.getDfspById = async (req, res) => {
         SUM(CASE WHEN status = 'COMMITTED' THEN amount ELSE 0 END) as total_volume
        FROM transfers
        WHERE payer_fsp = ? OR payee_fsp = ?`,
-      [dfspId, dfspId]
-    )
+      [dfspId, dfspId],
+    );
 
-    let clEndpoints = []
-    let clLimits = []
+    let clEndpoints = [];
+    let clLimits = [];
     try {
-      const epRes = await axios.get(`${CENTRAL_LEDGER}/participants/${dfspId}/endpoints`, {
-        headers: { 'fspiop-source': 'switch' }
-      })
-      clEndpoints = epRes.data
+      const epRes = await axios.get(
+        `${CENTRAL_LEDGER}/participants/${dfspId}/endpoints`,
+        {
+          headers: { 'fspiop-source': 'switch' },
+        },
+      );
+      clEndpoints = epRes.data;
 
-      const limRes = await axios.get(`${CENTRAL_LEDGER}/participants/${dfspId}/limits`, {
-        headers: { 'fspiop-source': 'switch' }
-      })
-      clLimits = limRes.data
+      const limRes = await axios.get(
+        `${CENTRAL_LEDGER}/participants/${dfspId}/limits`,
+        {
+          headers: { 'fspiop-source': 'switch' },
+        },
+      );
+      clLimits = limRes.data;
     } catch (_) {
-      // Central Ledger unavailable হলেও local data দেখাবে
+      null;
     }
 
     res.json({
-      data: { ...dfsp, stats, cl_endpoints: clEndpoints, cl_limits: clLimits }
-    })
+      data: { ...dfsp, stats, cl_endpoints: clEndpoints, cl_limits: clLimits },
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    res.status(500).json({ error: err.message });
   }
-}
+};
 
-// ════════════════════════════════════════════════════════════
-//  POST /dfsps
-//  ১. Central Ledger এ participant create
-//  ২. Settlement account create
-//  ৩. Callback endpoints register
-//  ৪. Net Debit Cap set (PUT)
-//  ৫. R Switch DB তে save
-// ════════════════════════════════════════════════════════════
+// Create DFSP
 exports.createDfsp = async (req, res) => {
   const {
     dfsp_id,
@@ -219,11 +222,11 @@ exports.createDfsp = async (req, res) => {
     admin_username,
     admin_email,
     admin_password,
-    admin_full_name
-  } = req.body
+    admin_full_name,
+  } = req.body;
 
   if (!dfsp_id || !name || !currency) {
-    return res.status(400).json({ error: 'dfsp_id, name, currency required' })
+    return res.status(400).json({ error: 'dfsp_id, name, currency required' });
   }
 
   const steps = {
@@ -231,59 +234,51 @@ exports.createDfsp = async (req, res) => {
     cl_position: true,
     cl_endpoints: null,
     cl_ndc: null,
-    db_save: null
-  }
+    db_save: null,
+  };
 
   try {
-    // ── Step 1: Central Ledger এ participant create ────────
     try {
-      steps.cl_participant = await clCreateParticipant(dfsp_id, currency)
-      console.log(`[DFSP] CL participant created: ${dfsp_id}`)
+      steps.cl_participant = await clCreateParticipant(dfsp_id, currency);
     } catch (e) {
-      const status = e.response?.status
+      const status = e.response?.status;
       if (status === 400 || status === 409) {
-        steps.cl_participant = { skipped: true, reason: 'already exists' }
-        console.log(`[DFSP] CL participant already exists: ${dfsp_id}`)
+        steps.cl_participant = { skipped: true, reason: 'already exists' };
       } else {
-        steps.cl_participant = { error: e.response?.data || e.message }
-        console.error(`[DFSP] CL participant error: ${e.message}`)
+        steps.cl_participant = { error: e.response?.data || e.message };
       }
     }
 
-    // ── Step 2: Settlement Account ─────────────────────────
-    // try {
-    //   steps.cl_position = await clSetInitialPosition(dfsp_id, currency);
-    //   console.log(`[DFSP] Settlement account created: ${dfsp_id}`);
-    // } catch (e) {
-    //   const errDesc =
-    //     e.response?.data?.errorInformation?.errorDescription || '';
-    //   if (errDesc.toLowerCase().includes('already') || e.response?.status === 409) {
-    //     steps.cl_position = { skipped: true, reason: 'account already exists' };
-    //     console.log(`[DFSP] Settlement account already exists: ${dfsp_id}`);
-    //   } else {
-    //     steps.cl_position = { error: e.response?.data || e.message };
-    //     console.error(`[DFSP] Position error: ${e.message}`);
-    //   }
-    // }
+    try {
+      steps.cl_position = await clSetInitialPosition(dfsp_id, currency);
+    } catch (e) {
+      const errDesc =
+        e.response?.data?.errorInformation?.errorDescription || '';
+      if (
+        errDesc.toLowerCase().includes('already') ||
+        e.response?.status === 409
+      ) {
+        steps.cl_position = { skipped: true, reason: 'account already exists' };
+      } else {
+        steps.cl_position = { error: e.response?.data || e.message };
+      }
+    }
 
-    // ── Step 3: Callback Endpoints ─────────────────────────
     if (callback_url || endpoint_url) {
       try {
-        steps.cl_endpoints = await clRegisterEndpoints(dfsp_id, callback_url || endpoint_url)
-        console.log(`[DFSP] Endpoints registered: ${dfsp_id}`)
+        steps.cl_endpoints = await clRegisterEndpoints(
+          dfsp_id,
+          callback_url || endpoint_url,
+        );
       } catch (e) {
-        steps.cl_endpoints = { error: e.response?.data || e.message }
-        console.error(`[DFSP] Endpoints error: ${e.message}`)
+        steps.cl_endpoints = { error: e.response?.data || e.message };
       }
     }
 
-    // ── Step 4: Net Debit Cap ──────────────────────────────
     try {
-      steps.cl_ndc = await clSetNetDebitCap(dfsp_id, currency, net_debit_cap)
-      console.log(`[DFSP] NDC set: ${dfsp_id} | ${net_debit_cap} ${currency}`)
+      steps.cl_ndc = await clSetNetDebitCap(dfsp_id, currency, net_debit_cap);
     } catch (e) {
-      steps.cl_ndc = { error: e.response?.data || e.message }
-      console.error(`[DFSP] NDC error: ${e.message}`)
+      steps.cl_ndc = { error: e.response?.data || e.message };
     }
 
     await pool.execute(
@@ -294,37 +289,42 @@ exports.createDfsp = async (req, res) => {
         dfsp_id,
         name,
         short_name || dfsp_id,
-        email || null, // email — সঠিক position এ
+        email || null,
         endpoint_url || null,
         callback_url || null,
-        currency
-      ]
-    )
-    steps.db_save = 'ok'
-    console.log(`[DFSP] Saved to R Switch DB: ${dfsp_id}`)
+        currency,
+      ],
+    );
+    steps.db_save = 'ok';
 
-    // dfsp_positions initial row
+    // initial positions row
     await pool.execute(
       `INSERT INTO dfsp_positions (id, dfsp_id, currency, current_position, net_debit_cap, reserved_amount)
        VALUES (?, ?, ?, 0, ?, 0)
        ON DUPLICATE KEY UPDATE net_debit_cap = VALUES(net_debit_cap), updated_at = NOW()`,
-      [uuidv4(), dfsp_id, currency, parseFloat(net_debit_cap)]
-    )
+      [uuidv4(), dfsp_id, currency, parseFloat(net_debit_cap)],
+    );
 
-    // ── Step 6: DFSP Admin User ────────────────────────────
-    let admin_user = null
+    // create dfsp admin user
+    let admin_user = null;
     if (admin_username && admin_email && admin_password) {
       try {
-        const hashed = await bcrypt.hash(admin_password, 10)
-        const adminId = uuidv4()
+        const hashed = await bcrypt.hash(admin_password, 10);
+        const adminId = uuidv4();
         await pool.execute(
           `INSERT INTO dfsp_users (id, dfsp_id, username, email, password, full_name, role)
            VALUES (?, ?, ?, ?, ?, ?, 'ADMIN')`,
-          [adminId, dfsp_id, admin_username, admin_email, hashed, admin_full_name || admin_username]
-        )
-        steps.admin_user = 'created'
-        admin_user = { username: admin_username, email: admin_email }
-        console.log(`[DFSP] Admin user created: ${admin_username} for ${dfsp_id}`)
+          [
+            adminId,
+            dfsp_id,
+            admin_username,
+            admin_email,
+            hashed,
+            admin_full_name || admin_username,
+          ],
+        );
+        steps.admin_user = 'created';
+        admin_user = { username: admin_username, email: admin_email };
 
         // Welcome email
         try {
@@ -368,24 +368,21 @@ exports.createDfsp = async (req, res) => {
     <div class="row"><span class="lbl">Password</span><span class="val">${admin_password}</span></div>
     <div class="row"><span class="lbl">Role</span><span class="val" style="color:#00ff00">ADMIN</span></div>
     <div class="warn">
-      <p>⚠️ Please login and change your password immediately.<br>
+      <p>Please login and change your password immediately.<br>
       You can create additional users (OPERATOR, VIEWER) from the portal.<br>
       Keep your credentials secure and do not share.</p>
     </div>
   </div>
   <div class="footer">R Switch Portal · Automated Access Email · Do not reply</div>
 </div></div>
-</body></html>`
-          })
-          steps.welcome_email = 'sent'
-          console.log(`[DFSP] Welcome email sent to ${admin_email}`)
+</body></html>`,
+          });
+          steps.welcome_email = 'sent';
         } catch (emailErr) {
-          steps.welcome_email = 'failed'
-          console.error(`[DFSP] Welcome email failed: ${emailErr.message}`)
+          steps.welcome_email = 'failed';
         }
       } catch (userErr) {
-        steps.admin_user = { error: userErr.message }
-        console.error(`[DFSP] Admin user creation failed: ${userErr.message}`)
+        steps.admin_user = { error: userErr.message };
       }
     }
 
@@ -393,70 +390,93 @@ exports.createDfsp = async (req, res) => {
       message: 'DFSP created successfully',
       dfsp_id,
       steps,
-      admin_user
-    })
+      admin_user,
+    });
   } catch (err) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'DFSP already exists in R Switch DB', steps })
-    res.status(500).json({ error: err.message, steps })
+    if (err.code === 'ER_DUP_ENTRY')
+      return res
+        .status(409)
+        .json({ error: 'DFSP already exists in R Switch DB', steps });
+    res.status(500).json({ error: err.message, steps });
   }
-}
+};
 
 exports.updateDfsp = async (req, res) => {
   try {
-    const { dfspId } = req.params
-    const { name, short_name, email, endpoint_url, callback_url, status, currency } = req.body
+    const { dfspId } = req.params;
+    const {
+      name,
+      short_name,
+      email,
+      endpoint_url,
+      callback_url,
+      status,
+      currency,
+    } = req.body;
 
     await pool.execute(
       `UPDATE dfsps
        SET name = ?, short_name = ?, email = ?,
            endpoint_url = ?, callback_url = ?, status = ?, currency = ?, updated_at = NOW()
        WHERE dfsp_id = ?`,
-      [name, short_name, email, endpoint_url, callback_url, status, currency, dfspId]
-    )
+      [
+        name,
+        short_name,
+        email,
+        endpoint_url,
+        callback_url,
+        status,
+        currency,
+        dfspId,
+      ],
+    );
 
     if (callback_url || endpoint_url) {
       try {
-        await clRegisterEndpoints(dfspId, callback_url || endpoint_url)
-        console.log(`[DFSP] Endpoints updated in CL: ${dfspId}`)
+        await clRegisterEndpoints(dfspId, callback_url || endpoint_url);
       } catch (e) {
-        console.error(`[DFSP] CL endpoint update failed: ${e.message}`)
+        // skip.
       }
     }
 
-    res.json({ message: 'DFSP updated successfully' })
+    res.json({ message: 'DFSP updated successfully' });
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    res.status(500).json({ error: err.message });
   }
-}
+};
 
 exports.getDfspEndpoints = async (req, res) => {
   try {
-    const { dfspId } = req.params
-    const response = await axios.get(`${CENTRAL_LEDGER}/participants/${dfspId}/endpoints`, {
-      headers: { 'fspiop-source': 'switch' }
-    })
-    res.json({ data: response.data })
+    const { dfspId } = req.params;
+    const response = await axios.get(
+      `${CENTRAL_LEDGER}/participants/${dfspId}/endpoints`,
+      {
+        headers: { 'fspiop-source': 'switch' },
+      },
+    );
+    res.json({ data: response.data });
   } catch (err) {
-    res.status(500).json({ error: err.response?.data || err.message })
+    res.status(500).json({ error: err.response?.data || err.message });
   }
-}
+};
 
 exports.registerEndpoints = async (req, res) => {
   try {
-    const { dfspId } = req.params
-    const { callback_url } = req.body
+    const { dfspId } = req.params;
+    const { callback_url } = req.body;
 
-    if (!callback_url) return res.status(400).json({ error: 'callback_url required' })
+    if (!callback_url)
+      return res.status(400).json({ error: 'callback_url required' });
 
-    const results = await clRegisterEndpoints(dfspId, callback_url)
+    const results = await clRegisterEndpoints(dfspId, callback_url);
 
-    await pool.execute(`UPDATE dfsps SET callback_url = ?, updated_at = NOW() WHERE dfsp_id = ?`, [
-      callback_url,
-      dfspId
-    ])
+    await pool.execute(
+      `UPDATE dfsps SET callback_url = ?, updated_at = NOW() WHERE dfsp_id = ?`,
+      [callback_url, dfspId],
+    );
 
-    res.json({ message: 'Endpoints registered', results })
+    res.json({ message: 'Endpoints registered', results });
   } catch (err) {
-    res.status(500).json({ error: err.response?.data || err.message })
+    res.status(500).json({ error: err.response?.data || err.message });
   }
-}
+};

@@ -1,8 +1,8 @@
 
 const axios = require('axios');
 
-const CENTRAL_LEDGER  = process.env.CENTRAL_LEDGER_URL  || 'http://ledger.mojaloop.xyz';
-const ALS_ADMIN       = process.env.ALS_ADMIN_URL        || 'http://als-admin.mojaloop.xyz';
+const CENTRAL_LEDGER  = process.env.CENTRAL_LEDGER_URL  || 'http://your-central-ledger.com';
+const ALS_ADMIN       = process.env.ALS_ADMIN_URL        || 'http://your-als-admin.com';
 
 const clHeaders  = { 'Content-Type': 'application/json', 'fspiop-source': 'switch' };
 const alsHeaders = {
@@ -11,11 +11,7 @@ const alsHeaders = {
   'Date':         new Date().toUTCString(),
 };
 
-// ================================================================
-//  HUB ACCOUNTS
-// ================================================================
-
-// GET /hub/accounts
+// Hub account
 exports.getHubAccounts = async (req, res) => {
   try {
     const response = await axios.get(
@@ -28,7 +24,6 @@ exports.getHubAccounts = async (req, res) => {
   }
 };
 
-// POST /hub/accounts
 exports.createHubAccount = async (req, res) => {
   try {
     const { currency, type } = req.body;
@@ -46,11 +41,7 @@ exports.createHubAccount = async (req, res) => {
   }
 };
 
-// ================================================================
-//  SETTLEMENT MODELS
-// ================================================================
-
-// GET /hub/settlement-models
+// Settlement models
 exports.getSettlementModels = async (req, res) => {
   try {
     const response = await axios.get(
@@ -63,7 +54,6 @@ exports.getSettlementModels = async (req, res) => {
   }
 };
 
-// POST /hub/settlement-models
 exports.createSettlementModel = async (req, res) => {
   try {
     const response = await axios.post(
@@ -77,11 +67,7 @@ exports.createSettlementModel = async (req, res) => {
   }
 };
 
-// ================================================================
-//  ORACLES
-// ================================================================
-
-// GET /hub/oracles
+// Oracles
 exports.getOracles = async (req, res) => {
   try {
     const response = await axios.get(
@@ -94,7 +80,6 @@ exports.getOracles = async (req, res) => {
   }
 };
 
-// POST /hub/oracles
 exports.createOracle = async (req, res) => {
   try {
     const response = await axios.post(
@@ -108,7 +93,6 @@ exports.createOracle = async (req, res) => {
   }
 };
 
-// DELETE /hub/oracles/:id
 exports.deleteOracle = async (req, res) => {
   try {
     const response = await axios.delete(

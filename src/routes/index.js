@@ -15,19 +15,19 @@ const activityCtrl = require('../controllers/activity.controller');
 const pispCtrl = require('../controllers/pisp.controller');
 const hubCtrl = require('../controllers/hub.controller');
 
-// ─── AUTH (public) ───────────────────────────────────────────
+//  AUTH (public)
 router.post('/auth/login', authCtrl.login);
 router.post('/auth/verify-otp', authCtrl.verify_otp);
 router.post('/auth/login-dfsp', authCtrl.getDFSPToken);
 
-// ─── AUTH (protected) ────────────────────────────────────────
+// AUTH (protected)
 router.get('/auth/users', auth, authCtrl.getUsers);
 router.post('/auth/users', auth, authCtrl.createUser);
 router.put('/auth/users/:id', auth, authCtrl.updateUser);
 
 // Hub
 
-// ─── HUB CONFIGURATION ───────────────────────────────────────
+// HUB CONFIGURATION
 router.get ('/hub/accounts',           auth, hubCtrl.getHubAccounts);
 router.post('/hub/accounts',           auth, hubCtrl.createHubAccount);
 router.get ('/hub/settlement-models',  auth, hubCtrl.getSettlementModels);
@@ -36,20 +36,20 @@ router.get ('/hub/oracles',            auth, hubCtrl.getOracles);
 router.post('/hub/oracles',            auth, hubCtrl.createOracle);
 router.delete('/hub/oracles/:id',      auth, hubCtrl.deleteOracle);
 
-// ─── DASHBOARD ───────────────────────────────────────────────
+// DASHBOARD
 router.get('/dashboard/summary', auth, dashCtrl.getSummary);
 
-// ─── TRANSFERS ───────────────────────────────────────────────
+// TRANSFERS
 router.get('/transfers', auth, txCtrl.getTransfers);
 router.get('/transfers/stats', auth, txCtrl.getStats);
 router.get('/transfers/:transferId', auth, txCtrl.getTransferById);
 
-// ─── RECONCILIATION ──────────────────────────────────────────
+// RECONCILIATION
 router.get('/reconciliation', auth, reconCtrl.getReconciliation);
 router.post('/reconciliation/run', auth, reconCtrl.runReconciliation);
 router.get('/reconciliation/report', auth, reconCtrl.getReport);
 
-// ─── NOTIFICATION ──────────────────────────────────────────
+// NOTIFICATION
 router.get('/notifications/stats', auth, notifCtrl.getStats);
 router.get(
   '/notifications/transfer/:transferId',
@@ -59,7 +59,7 @@ router.get(
 router.get('/notifications/:id', auth, notifCtrl.getNotificationById);
 router.get('/notifications', auth, notifCtrl.getNotifications);
 
-// ─── DFSP MANAGEMENT ─────────────────────────────────────────
+// DFSP MANAGEMENT
 router.get('/dfsps', auth, dfspCtrl.getDfsps);
 router.get('/dfsps-mini', auth, dfspCtrl.getMiniDfspsData);
 
@@ -69,7 +69,7 @@ router.put('/dfsps/:dfspId', auth, dfspCtrl.updateDfsp);
 router.get('/dfsps/:dfspId/endpoints', auth, dfspCtrl.getDfspEndpoints);
 router.post('/dfsps/:dfspId/endpoints', auth, dfspCtrl.registerEndpoints);
 
-// ─── PISP MANAGEMENT ─────────────────────────────────────────
+// PISP MANAGEMENT
 router.get ('/pisps',                               auth, pispCtrl.getPisps);
 router.post('/pisps',                               auth, pispCtrl.createPisp);
 router.get ('/pisps/:pispId',                       auth, pispCtrl.getPispById);
@@ -79,7 +79,7 @@ router.get ('/pisps/:pispId/endpoints',             auth, pispCtrl.getPispEndpoi
 router.post('/pisps/:pispId/endpoints',             auth, pispCtrl.registerEndpoints);
 
 
-// ─── SETTLEMENT ──────────────────────────────────────────────
+// SETTLEMENT
 router.get('/settlement/windows', auth, settlCtrl.getWindows);
 router.get('/settlement/windows/open', auth, settlCtrl.getOpenWindows);
 router.get('/settlement/positions', auth, settlCtrl.getPositions);
@@ -92,7 +92,7 @@ router.get('/settlement/completed-records', auth, settlCtrl.getCompletedRecords)
 router.post('/settlement/:windowId/finalize', auth, settlCtrl.finalizeByWindow);
 
 
-// ─── DFSP POSITIONS (Liquidity) ──────────────────────────────
+// DFSP POSITIONS (Liquidity)
 router.get('/positions', auth, posCtrl.getPositions);
 router.get('/positions/changes', auth, posCtrl.getPositionChanges);
 router.get('/positions/limits', auth, posCtrl.getLimits);
@@ -103,16 +103,14 @@ router.get('/positions/:dfspId/live', auth, posCtrl.getLivePosition);
 router.post('/positions/deposit', auth, posCtrl.depositFunds);
 router.get('/positions/:dfspId/accounts', auth, posCtrl.getDfspAccounts);
 
-// ─── ACTIVITY LOGS ───────────────────────────────────────────
+// ACTIVITY LOGS
 router.get('/activity-logs',                        auth, activityCtrl.getLogs);
 router.get('/activity-logs/stats',                  auth, activityCtrl.getStats);
 
-// ─── REPORTS ─────────────────────────────────────────────────
+// REPORTS
 router.get('/reports/data', auth, reportCtrl.getReportData);
 router.get('/reports/export', auth, reportCtrl.exportExcel);
 
-// test
-// app.js বা routes এ যোগ করো
 
 
 module.exports = router;

@@ -1,7 +1,5 @@
 const { pool } = require('../config/db');
 
-// ─── GET /notifications ───────────────────────────────────────
-// Query params: to_fsp, from_fsp, transfer_state, event_type, transfer_id, page, limit
 exports.getNotifications = async (req, res) => {
   try {
     const {
@@ -61,7 +59,6 @@ exports.getNotifications = async (req, res) => {
   }
 };
 
-// ─── GET /notifications/:id ───────────────────────────────────
 exports.getNotificationById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -81,8 +78,7 @@ exports.getNotificationById = async (req, res) => {
   }
 };
 
-// ─── GET /notifications/transfer/:transferId ──────────────────
-// একটি transfer এর সব notifications
+
 exports.getByTransferId = async (req, res) => {
   try {
     const { transferId } = req.params;
@@ -101,8 +97,7 @@ exports.getByTransferId = async (req, res) => {
   }
 };
 
-// ─── GET /notifications/stats ─────────────────────────────────
-// Notification statistics
+
 exports.getStats = async (req, res) => {
   try {
     const [[summary]] = await pool.execute(`

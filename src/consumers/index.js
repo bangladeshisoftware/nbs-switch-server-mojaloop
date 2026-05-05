@@ -2,30 +2,21 @@ const { consumer, TOPICS } = require('../config/kafka');
 const { pool } = require('../config/db');
 const { v4: uuidv4 } = require('uuid');
 
-// ════════════════════════════════════════════════════════════
 //  BASE64 PAYLOAD DECODER
-//  Mojaloop Kafka এ payload কখনো base64 encoded string হিসেবে আসে:
-//  "data:application/vnd...;base64,eyJ0cmFuc2Zlcklk..."
-// ════════════════════════════════════════════════════════════
 function decodePayload(payload) {
   if (!payload) return {};
 
-  // Already a plain object — সরাসরি return করো
   if (typeof payload === 'object') return payload;
 
-  // base64 encoded string — decode করো
   if (typeof payload === 'string') {
     try {
-      // "data:...;base64,XXXX" format
       const base64Match = payload.match(/base64,(.+)$/);
       if (base64Match) {
         const decoded = Buffer.from(base64Match[1], 'base64').toString('utf8');
         return JSON.parse(decoded);
       }
-      // Plain JSON string
       return JSON.parse(payload);
     } catch (e) {
-      console.warn(`⚠️ payload decode failed: ${e.message}`);
       return {};
     }
   }
@@ -33,11 +24,8 @@ function decodePayload(payload) {
   return {};
 }
 
-// ════════════════════════════════════════════════════════════
 //  MOJALOOP PAYLOAD EXTRACTOR
-// ════════════════════════════════════════════════════════════
 function extractPayload(raw) {
-  // content.payload decode করো (base64 অথবা object)
   const inner = decodePayload(raw?.content?.payload);
 
   const transferId =
@@ -73,19 +61,15 @@ function extractPayload(raw) {
     transferState: inner?.transferState || raw?.metadata?.event?.action || null,
     errorCode: inner?.errorInformation?.errorCode || null,
     errorMessage: inner?.errorInformation?.errorDescription || null,
-    // notification
     toFsp: raw?.to || null,
     fromFsp: raw?.from || 'hub',
     eventType:
       raw?.metadata?.event?.type || raw?.metadata?.event?.action || 'unknown',
-    // raw inner for debugging
     _inner: inner,
   };
 }
 
-// ════════════════════════════════════════════════════════════
 //  HELPERS
-// ════════════════════════════════════════════════════════════
 async function saveStateLog(
   conn,
   transferId,
@@ -117,7 +101,7 @@ async function saveStateLog(
       ],
     );
   } catch (e) {
-    console.error(`⚠️ saveStateLog: ${e.message}`);
+    console.error(`saveStateLog: ${e.message}`);
   }
 }
 
@@ -130,9 +114,7 @@ async function getTransfer(conn, transferId) {
   return rows[0] || null;
 }
 
-// ════════════════════════════════════════════════════════════
-//  ১. PREPARE → RECEIVED
-// ════════════════════════════════════════════════════════════
+//  PREPARE => RECEIVED
 async function handlePrepare(raw) {
   const conn = await pool.getConnection();
   try {
@@ -141,7 +123,7 @@ async function handlePrepare(raw) {
     const p = extractPayload(raw);
 
     if (!p.transferId) {
-      console.warn(`⚠️ [PREPARE] transferId পাওয়া যায়নি, skip`);
+      console.warn(`[PREPARE] transferId not sended, skip`);
       await conn.rollback();
       return;
     }
@@ -188,20 +170,15 @@ async function handlePrepare(raw) {
     );
 
     await conn.commit();
-    console.log(
-      `✅ [PREPARE] ${p.transferId} | ${p.payerFsp} → ${p.payeeFsp} | ${p.amount} ${p.currency}`,
-    );
   } catch (err) {
     await conn.rollback();
-    console.error(`❌ [PREPARE] ${err.message}`);
+    null;
   } finally {
     conn.release();
   }
 }
 
-// ════════════════════════════════════════════════════════════
-//  ২. POSITION → RESERVED
-// ════════════════════════════════════════════════════════════
+//  POSITION => RESERVED
 async function handlePosition(raw) {
   const conn = await pool.getConnection();
   try {
@@ -211,7 +188,6 @@ async function handlePosition(raw) {
     const transfer = await getTransfer(conn, p.transferId);
 
     if (!transfer) {
-      console.warn(`⚠️ [POSITION] Transfer not found: ${p.transferId}`);
       await conn.rollback();
       return;
     }
@@ -277,21 +253,14 @@ async function handlePosition(raw) {
       raw,
     );
     await conn.commit();
-    console.log(
-      `✅ [POSITION] Reserved: ${p.transferId} | ${transfer.payer_fsp} | ${transfer.amount} ${transfer.currency}`,
-    );
   } catch (err) {
     await conn.rollback();
-    console.error(`❌ [POSITION] ${err.message}`);
   } finally {
     conn.release();
   }
 }
 
-// ════════════════════════════════════════════════════════════
-//  ৩. FULFIL → COMMITTED
-//  NOTE: FULFIL payload এ amount নেই, transfers table থেকে নিতে হয়
-// ════════════════════════════════════════════════════════════
+// FULFIL => COMMITTED
 async function handleFulfil(raw) {
   const conn = await pool.getConnection();
   try {
@@ -301,12 +270,10 @@ async function handleFulfil(raw) {
     const transfer = await getTransfer(conn, p.transferId);
 
     if (!p.transferId) {
-      console.warn(`⚠️ [FULFIL] transferId পাওয়া যায়নি`);
       await conn.rollback();
       return;
     }
 
-    // fulfilment ও transferState inner payload থেকে আসে
     const transferState =
       p.transferState || p._inner?.transferState || 'COMMITTED';
     const fulfilment = p.fulfilment || p._inner?.fulfilment || null;
@@ -335,7 +302,6 @@ async function handleFulfil(raw) {
       raw,
     );
 
-    // Reconciliation — transfers table থেকে amount/currency নাও
     if (transfer) {
       await conn.execute(
         `
@@ -412,20 +378,14 @@ async function handleFulfil(raw) {
     }
 
     await conn.commit();
-    console.log(
-      `✅ [FULFIL] Committed: ${p.transferId} | ${transfer?.amount} ${transfer?.currency}`,
-    );
   } catch (err) {
     await conn.rollback();
-    console.error(`❌ [FULFIL] ${err.message}`);
   } finally {
     conn.release();
   }
 }
 
-// ════════════════════════════════════════════════════════════
-//  ৪. REJECT → FAILED
-// ════════════════════════════════════════════════════════════
+//  REJECT => FAILED
 async function handleReject(raw) {
   const conn = await pool.getConnection();
   try {
@@ -435,7 +395,6 @@ async function handleReject(raw) {
     const transfer = await getTransfer(conn, p.transferId);
 
     if (!p.transferId) {
-      console.warn(`⚠️ [REJECT] transferId পাওয়া যায়নি`);
       await conn.rollback();
       return;
     }
@@ -484,18 +443,14 @@ async function handleReject(raw) {
     }
 
     await conn.commit();
-    console.log(`✅ [REJECT] Failed: ${p.transferId} | Error: ${p.errorCode}`);
   } catch (err) {
     await conn.rollback();
-    console.error(`❌ [REJECT] ${err.message}`);
   } finally {
     conn.release();
   }
 }
 
-// ════════════════════════════════════════════════════════════
-//  ৫. TIMEOUT
-// ════════════════════════════════════════════════════════════
+// TIMEOUT
 async function handleTimeout(raw) {
   const conn = await pool.getConnection();
   try {
@@ -505,7 +460,6 @@ async function handleTimeout(raw) {
     const transfer = await getTransfer(conn, p.transferId);
 
     if (!p.transferId) {
-      console.warn(`⚠️ [TIMEOUT] transferId পাওয়া যায়নি`);
       await conn.rollback();
       return;
     }
@@ -553,18 +507,14 @@ async function handleTimeout(raw) {
     }
 
     await conn.commit();
-    console.log(`✅ [TIMEOUT] Expired: ${p.transferId}`);
   } catch (err) {
     await conn.rollback();
-    console.error(`❌ [TIMEOUT] ${err.message}`);
   } finally {
     conn.release();
   }
 }
 
-// ════════════════════════════════════════════════════════════
-//  ৬. NOTIFICATION
-// ════════════════════════════════════════════════════════════
+// NOTIFICATION
 async function handleNotification(raw) {
   const conn = await pool.getConnection();
   try {
@@ -612,18 +562,13 @@ async function handleNotification(raw) {
         raw,
       );
     }
-
-    console.log(`✅ [NOTIFICATION] → to: ${toFsp} | state: ${transferState}`);
   } catch (err) {
-    console.error(`❌ [NOTIFICATION] ${err.message}`);
   } finally {
     conn.release();
   }
 }
 
-// ════════════════════════════════════════════════════════════
-//  ৭. SETTLEMENT CLOSE
-// ════════════════════════════════════════════════════════════
+// SETTLEMENT CLOSE
 async function handleSettlementClose(raw) {
   const conn = await pool.getConnection();
   try {
@@ -657,18 +602,14 @@ async function handleSettlementClose(raw) {
     );
 
     await conn.commit();
-    console.log(`✅ [SETTLEMENT] Window closed: ${windowId}`);
   } catch (err) {
     await conn.rollback();
-    console.error(`❌ [SETTLEMENT] ${err.message}`);
   } finally {
     conn.release();
   }
 }
 
-// ════════════════════════════════════════════════════════════
-//  ৮. ADMIN TRANSFER
-// ════════════════════════════════════════════════════════════
+//  ADMIN TRANSFER
 async function handleAdminTransfer(raw) {
   const conn = await pool.getConnection();
   try {
@@ -685,17 +626,14 @@ async function handleAdminTransfer(raw) {
       null,
       raw,
     );
-    console.log(`✅ [ADMIN] Logged: ${p.transferId}`);
   } catch (err) {
-    console.error(`❌ [ADMIN] ${err.message}`);
+    null;
   } finally {
     conn.release();
   }
 }
 
-// ════════════════════════════════════════════════════════════
 //  START CONSUMER
-// ════════════════════════════════════════════════════════════
 async function startConsumer() {
   await consumer.connect();
 
@@ -721,7 +659,6 @@ async function startConsumer() {
       try {
         raw = JSON.parse(message.value.toString());
         const id = raw?.id || raw?.content?.uriParams?.id || 'unknown';
-        console.log(`\n📨 [${topic}] ID: ${id}`);
 
         switch (topic) {
           case TOPICS.TRANSFER_PREPARE:
@@ -742,21 +679,17 @@ async function startConsumer() {
           case TOPICS.ADMIN_TRANSFER:
             await handleAdminTransfer(raw);
             break;
-          // QUOTES and POSITION_BATCH — log only for now, no handler yet
           default:
-            console.log(
-              `📋 [${topic}] No handler yet, raw:`,
-              JSON.stringify(raw).slice(0, 200),
-            );
+          // skip.
         }
       } catch (err) {
-        console.error(`❌ [${topic}] ${err.message}`);
+        // console.error(`[${topic}] ${err.message}`);
         if (raw) console.error(`   raw: ${JSON.stringify(raw).slice(0, 300)}`);
       }
     },
   });
 
-  console.log('✅ Kafka consumer listening on all topics');
+  console.log('Kafka consumer listening on all topics');
 }
 
 module.exports = { startConsumer };
