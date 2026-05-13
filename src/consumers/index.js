@@ -2,7 +2,7 @@ const { consumer, TOPICS } = require('../config/kafka');
 const { pool } = require('../config/db');
 const { v4: uuidv4 } = require('uuid');
 
-//  BASE64 PAYLOAD DECODER
+
 function decodePayload(payload) {
   if (!payload) return {};
 
@@ -15,14 +15,17 @@ function decodePayload(payload) {
         const decoded = Buffer.from(base64Match[1], 'base64').toString('utf8');
         return JSON.parse(decoded);
       }
+
       return JSON.parse(payload);
     } catch (e) {
+      console.warn(`payload decode failed: ${e.message}`);
       return {};
     }
   }
 
   return {};
 }
+
 
 //  MOJALOOP PAYLOAD EXTRACTOR
 function extractPayload(raw) {
@@ -61,6 +64,7 @@ function extractPayload(raw) {
     transferState: inner?.transferState || raw?.metadata?.event?.action || null,
     errorCode: inner?.errorInformation?.errorCode || null,
     errorMessage: inner?.errorInformation?.errorDescription || null,
+    // notification
     toFsp: raw?.to || null,
     fromFsp: raw?.from || 'hub',
     eventType:
@@ -69,7 +73,7 @@ function extractPayload(raw) {
   };
 }
 
-//  HELPERS
+//  Helper
 async function saveStateLog(
   conn,
   transferId,
@@ -114,7 +118,8 @@ async function getTransfer(conn, transferId) {
   return rows[0] || null;
 }
 
-//  PREPARE => RECEIVED
+
+//  1. PREPARE -> RECEIVED
 async function handlePrepare(raw) {
   const conn = await pool.getConnection();
   try {
@@ -123,7 +128,7 @@ async function handlePrepare(raw) {
     const p = extractPayload(raw);
 
     if (!p.transferId) {
-      console.warn(`[PREPARE] transferId not sended, skip`);
+      console.warn(`[PREPARE] transferId পাওয়া যায়নি, skip`);
       await conn.rollback();
       return;
     }
@@ -170,15 +175,15 @@ async function handlePrepare(raw) {
     );
 
     await conn.commit();
+
   } catch (err) {
     await conn.rollback();
-    null;
   } finally {
     conn.release();
   }
 }
 
-//  POSITION => RESERVED
+//  2. POSITION -> RESERVED
 async function handlePosition(raw) {
   const conn = await pool.getConnection();
   try {
@@ -260,7 +265,7 @@ async function handlePosition(raw) {
   }
 }
 
-// FULFIL => COMMITTED
+//  3. FULFIL -> COMMITTED
 async function handleFulfil(raw) {
   const conn = await pool.getConnection();
   try {
@@ -302,6 +307,7 @@ async function handleFulfil(raw) {
       raw,
     );
 
+    // Reconciliation — transfers table get amount and currency.
     if (transfer) {
       await conn.execute(
         `
@@ -385,7 +391,7 @@ async function handleFulfil(raw) {
   }
 }
 
-//  REJECT => FAILED
+//  4. REJECT -> FAILED
 async function handleReject(raw) {
   const conn = await pool.getConnection();
   try {
@@ -450,7 +456,7 @@ async function handleReject(raw) {
   }
 }
 
-// TIMEOUT
+//  5. TIMEOUT
 async function handleTimeout(raw) {
   const conn = await pool.getConnection();
   try {
@@ -514,7 +520,7 @@ async function handleTimeout(raw) {
   }
 }
 
-// NOTIFICATION
+//  6. NOTIFICATION
 async function handleNotification(raw) {
   const conn = await pool.getConnection();
   try {
@@ -562,13 +568,15 @@ async function handleNotification(raw) {
         raw,
       );
     }
+
   } catch (err) {
+    null;
   } finally {
     conn.release();
   }
 }
 
-// SETTLEMENT CLOSE
+//  7. SETTLEMENT CLOSE
 async function handleSettlementClose(raw) {
   const conn = await pool.getConnection();
   try {
@@ -609,7 +617,7 @@ async function handleSettlementClose(raw) {
   }
 }
 
-//  ADMIN TRANSFER
+//  8. ADMIN TRANSFER
 async function handleAdminTransfer(raw) {
   const conn = await pool.getConnection();
   try {
@@ -627,7 +635,6 @@ async function handleAdminTransfer(raw) {
       raw,
     );
   } catch (err) {
-    null;
   } finally {
     conn.release();
   }
@@ -636,29 +643,33 @@ async function handleAdminTransfer(raw) {
 //  START CONSUMER
 async function startConsumer() {
   await consumer.connect();
+  console.log('Kafka consumer connected');
 
-  await consumer.subscribe({
-    topics: [
-      TOPICS.TRANSFER_PREPARE,
-      TOPICS.TRANSFER_FULFIL,
-      TOPICS.TRANSFER_POSITION,
-      TOPICS.TRANSFER_POSITION_BATCH,
-      TOPICS.NOTIFICATION,
-      TOPICS.QUOTES_POST,
-      TOPICS.QUOTES_PUT,
-      TOPICS.QUOTES_GET,
-      TOPICS.SETTLEMENT_CLOSE,
-      TOPICS.ADMIN_TRANSFER,
-    ],
-    fromBeginning: false,
-  });
+  const topics = [
+    TOPICS.TRANSFER_PREPARE,
+    TOPICS.TRANSFER_POSITION,
+    TOPICS.TRANSFER_FULFIL,
+    TOPICS.TRANSFER_REJECT,
+    TOPICS.TIMEOUT,
+    TOPICS.NOTIFICATION,
+    TOPICS.SETTLEMENT_CLOSE,
+    TOPICS.ADMIN_TRANSFER,
+  ];
+
+  for (const topic of topics) {
+    await consumer.subscribe({ topic, fromBeginning: false });
+  }
+
+  console.log('Subscribed to Mojaloop Kafka topics:');
+  topics.forEach((t) => console.log(`   → ${t}`));
 
   await consumer.run({
-    eachMessage: async ({ topic, partition, message }) => {
+    eachMessage: async ({ topic, message }) => {
       let raw;
       try {
         raw = JSON.parse(message.value.toString());
         const id = raw?.id || raw?.content?.uriParams?.id || 'unknown';
+        console.log(`${topic} ID: ${id}`);
 
         switch (topic) {
           case TOPICS.TRANSFER_PREPARE:
@@ -670,6 +681,12 @@ async function startConsumer() {
           case TOPICS.TRANSFER_FULFIL:
             await handleFulfil(raw);
             break;
+          case TOPICS.TRANSFER_REJECT:
+            await handleReject(raw);
+            break;
+          case TOPICS.TIMEOUT:
+            await handleTimeout(raw);
+            break;
           case TOPICS.NOTIFICATION:
             await handleNotification(raw);
             break;
@@ -679,17 +696,13 @@ async function startConsumer() {
           case TOPICS.ADMIN_TRANSFER:
             await handleAdminTransfer(raw);
             break;
-          default:
-          // skip.
         }
       } catch (err) {
-        // console.error(`[${topic}] ${err.message}`);
-        if (raw) console.error(`   raw: ${JSON.stringify(raw).slice(0, 300)}`);
+        console.error(`[${topic}] ${err.message}`);
+        if (raw) console.error(`raw: ${JSON.stringify(raw).slice(0, 300)}`);
       }
     },
   });
-
-  console.log('Kafka consumer listening on all topics');
 }
 
 module.exports = { startConsumer };
