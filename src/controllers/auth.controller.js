@@ -148,12 +148,12 @@ exports.getDFSPToken = async (req, res) => {
         username: user.username,
         role: user.role,
       },
-      'wreta9483kargorgargarragaerg555ht',
+      process.env.DFSP_PORTAL_SECRET,
       {
         expiresIn: process.env.JWT_EXPIRES_IN || '365d',
       },
     );
-    
+
     await pool.execute(
       `UPDATE dfsp_users SET token = ?, last_login = NOW() WHERE id = ?`,
       [token, user.id],
