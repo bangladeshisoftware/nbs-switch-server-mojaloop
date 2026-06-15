@@ -179,8 +179,6 @@ Core Payment Platform	Mojaloop
 Ledger System	Central Ledger
 Lookup Service	ALS (Account Lookup Service)
 
-Environment Variables
-CENTRAL_LEDGER_URL=http://ledger.mojaloop.xyz  , ALS_ADMIN_URL=http://als-admin.mojaloop.xyz
 
 Hub Controller Documentation
 The hub.controller.js file is responsible for handling core Hub administration APIs.
@@ -303,7 +301,7 @@ Function
 exports.createOracle
 Example Request
 
-{  "endpoint": "http://oracle.mojaloop.xyz",  "type": "MSISDN"}
+{  "endpoint": "http://oracle.domain.com",  "type": "MSISDN"}
 Delete Oracle
 
 Endpoint
@@ -408,7 +406,7 @@ require('../services/email.service')
 External Services
 
 Central Ledger
-CENTRAL_LEDGER_URL=http://ledger.mojaloop.xyz
+CENTRAL_LEDGER_URL=http://ledger.domain.com
 Used for:
 
 Participant management
@@ -420,7 +418,7 @@ Settlement configuration
 Limits management
 
 ALS Service
-ALS_URL=http://als.mojaloop.xyz
+ALS_URL=http://als.domain.com
 Used for:
 
 Account lookup
