@@ -1,1563 +1,765 @@
-# R-Switch Server Documentation
+# R Switch — Mojaloop Payment Switch Server
+
+A production-grade **National Payment Switch** built on [Mojaloop](https://mojaloop.io/) open-source infrastructure. R Switch acts as the central hub connecting multiple DFSPs (Digital Financial Service Providers), consuming real-time Kafka events from the Mojaloop core, managing settlement windows, tracking positions, and exposing a full admin portal API for switch operators.
+
+> **Project Context:** R Switch is designed as the interoperability layer for a national payment network (BDT / Bangladesh), coordinating FSPIOP flows between participant banks and mobile money operators.
+
+---
+
+## Table of Contents
+
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [Environment Setup](#environment-setup)
+- [Installation](#installation)
+- [Authentication](#authentication)
+- [DFSP Management](#dfsp-management)
+- [Hub Administration](#hub-administration)
+- [Transfer Lifecycle](#transfer-lifecycle)
+  - [Kafka Consumer Pipeline](#kafka-consumer-pipeline)
+  - [Transfer State Machine](#transfer-state-machine)
+  - [Position Tracking](#position-tracking)
+- [Settlement](#settlement)
+  - [Settlement Window Flow](#settlement-window-flow)
+  - [Finalize by Window](#finalize-by-window)
+- [Reconciliation](#reconciliation)
+- [Notifications Log](#notifications-log)
+- [Reports & Excel Export](#reports--excel-export)
+- [Dashboard](#dashboard)
+- [Activity Logs](#activity-logs)
+- [Database Schema Overview](#database-schema-overview)
+- [Kafka Topics](#kafka-topics)
+- [API Reference](#api-reference)
+- [Security](#security)
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      R Switch Server                            │
+│                                                                 │
+│  ┌─────────────────┐   ┌──────────────────┐  ┌─────────────┐   │
+│  │   REST API      │   │  Kafka Consumer  │  │  Scheduler  │   │
+│  │  (Express.js)   │   │  (KafkaJS)       │  │  (Cron)     │   │
+│  └────────┬────────┘   └────────┬─────────┘  └──────┬──────┘   │
+│           │                     │                    │          │
+│           └─────────────────────▼────────────────────┘          │
+│                          MySQL Database                          │
+│     transfers · dfsp_positions · reconciliation                  │
+│     settlement_windows · notifications_log · activity_logs       │
+└───────────────────────────────────────────────────────┬─────────┘
+              │                         │               │
+              ▼                         ▼               ▼
+       Mojaloop Hub             Central Ledger    Settlement
+       (FSPIOP API)             (REST Admin)      Service
+              │
+      ┌───────┴────────┐
+      │                │
+   DFSP A           DFSP B
+ (A Bank)         (B Bank)
+```
+
+---
+
+## Tech Stack
+
+| Layer         | Technology                                     |
+| ------------- | ---------------------------------------------- |
+| Runtime       | Node.js                                        |
+| Framework     | Express.js                                     |
+| Message Queue | Apache Kafka (KafkaJS)                         |
+| Database      | MySQL (mysql2 with connection pool)            |
+| Auth          | JWT (OTP-based two-factor login)               |
+| Password      | bcryptjs                                       |
+| HTTP Client   | Axios                                          |
+| Excel Export  | ExcelJS                                        |
+| Geo IP        | geoip-lite                                     |
+| Protocol      | Mojaloop FSPIOP API + Central Ledger Admin API |
+
+---
+
+## Environment Setup
+
+Create `.env` in the project root:
+
+```dotenv
+# ── Server ────────────────────────────────────────────────────
+PORT=4000
+NODE_ENV=production
+
+# ── MySQL ─────────────────────────────────────────────────────
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=your_db_password
+DB_NAME=r_switch
+
+# ── Kafka ─────────────────────────────────────────────────────
+KAFKA_BROKER=your-vm-ip:9092
+KAFKA_GROUP_ID=r-switch-db-saver
+KAFKA_CLIENT_ID=r-switch-portal
 
-Overvie​w
-R-Switch Server is a Mojaloop-based backend service designed to manage core National Payment Switch operations for interoperable real-time payment infrastructure.
+# ── JWT ───────────────────────────────────────────────────────
+JWT_SECRET=your_switch_jwt_secret
+DFSP_PORTAL_SECRET=your_dfsp_portal_secret
+JWT_EXPIRES_IN=365d
 
-The server acts as an administrative and orchestration layer between Mojaloop services such as:
+# ── Mojaloop Services ─────────────────────────────────────────
+CENTRAL_LEDGER_URL=https://your-ledger.domain.com
+SETTLEMENT_URL=https://your-settlement.domain.com/version
+ALS_URL=https://your-als.domain.com
+ALS_ADMIN_URL=https://your-als-admin.domain.com
 
-Central Ledger
+# ── Email (SMTP) ──────────────────────────────────────────────
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=noreply@example.com
+SMTP_PASS=your_smtp_password
+SMTP_FROM="R Switch Portal" <noreply@example.com>
 
-Account Lookup Service (ALS)
+# ── Portal ────────────────────────────────────────────────────
+DFSP_PORTAL_URL=https://your.dfsp-portal.com
+```
 
-Settlement Service
+---
 
-Kafka Consumer Services
+## Installation
 
-DFSP Management
+```bash
+# 1. Clone the repository
+git clone https://github.com/bangladeshisoftware/nbs-switch-server-mojaloop.git
+cd r-switch
 
-The project provides APIs and operational services required for:
+# 2. Install dependencies
+npm install
 
-Settlement Management
+# 3. Configure environment
+cp .env.example .env
+# Edit .env with your values
 
-DFSP Onboarding
+# 4. Initialize database
+# mysql -u root -p r_switch < schema.sql
 
-Hub Account Management
+# 5. Start the server (starts API + Kafka consumer together)
+npm start
 
-Settlement Model Configuration
+# Development with hot reload
+npm run dev
+```
 
-Oracle Configuration
+The server starts on `PORT` (default `4000`) and automatically connects the Kafka consumer on startup.
 
-Liquidity Monitoring
+---
 
-Callback Endpoint Configuration
+## Authentication
 
-Kafka Event Processing
+R Switch uses **OTP-based two-factor authentication** for switch operators. DFSP portals use a separate token flow.
 
-Core Features
-1. Settlement Management
-The system provides APIs and operational tools to manage Mojaloop settlement workflows.
+### Switch Operator Login (2-step)
 
-Features include:
+**Step 1 — Submit credentials:**
 
-Settlement model creation
+```
+POST /api/auth/login
+Body: { username, password }
+```
 
-Settlement position monitoring
+Validates credentials, generates a 6-digit OTP, stores it with a 10-minute expiry, and sends it to the user's registered email. Returns a masked email hint.
 
-Settlement configuration
+```json
+{
+  "otp_status": true,
+  "email_sent": true,
+  "email_hint": "ad****@example.com",
+  "expires_in": "10 minutes"
+}
+```
 
-Deferred net settlement support
+**Step 2 — Verify OTP:**
 
-Settlement account management
+```
+POST /api/auth/verify-otp
+Body: { username, otp }
+```
+
+Validates OTP against the database (not expired). On success: clears OTP, records login activity (IP + geo-location via `geoip-lite`), returns a signed JWT.
 
-Integrated with:
+```json
+{
+  "token": "<jwt>",
+  "user": { "id", "username", "email", "role" }
+}
+```
 
-Mojaloop Central Ledger
+### DFSP Portal Token
 
-Settlement Service
+```
+POST /api/auth/dfsp-token
+Body: { dfsp_id }
+```
 
-2. DFSP Onboarding
-The platform supports onboarding and management of DFSPs (Digital Financial Service Providers).
+Issues a long-lived JWT for DFSP portal systems, signed with `DFSP_PORTAL_SECRET`. Stored in `dfsp_users.token` for reference.
 
-Capabilities:
+### User Management
 
-DFSP registration
+| Method | Endpoint              | Description                  |
+| ------ | --------------------- | ---------------------------- |
+| `GET`  | `/api/auth/users`     | List all switch users        |
+| `POST` | `/api/auth/users`     | Create switch user           |
+| `PUT`  | `/api/auth/users/:id` | Update role or active status |
 
-DFSP configuration
+**Roles:** `ADMIN`, `OPERATOR`, `VIEWER`
 
-Endpoint setup
+---
 
-Callback URL management
+## DFSP Management
 
-Liquidity account provisioning
+Full lifecycle management of participant DFSPs, including automatic provisioning in the Mojaloop Central Ledger.
 
-3. Hub Account Management
-R-Switch provides APIs for managing Hub accounts inside Mojaloop Central Ledger.
+### Create DFSP
 
-Supported operations:
+```
+POST /api/dfsps
+```
 
-Create Hub accounts
+**Body:**
 
-Retrieve Hub accounts
+```json
+{
+  "dfsp_id": "DFSP001",
+  "name": "A Bank",
+  "short_name": "ABANK",
+  "email": "ops@abank.com",
+  "callback_url": "https://abank.dfsp.com",
+  "currency": "BDT",
+  "net_debit_cap": "50000",
+  "admin_username": "abank_admin",
+  "admin_email": "admin@abank.com",
+  "admin_password": "tempPass123"
+}
+```
 
-Configure settlement accounts
+**Provisioning steps (automatic, in order):**
 
-Manage reconciliation accounts
+| Step             | Action                               | Service                                                          |
+| ---------------- | ------------------------------------ | ---------------------------------------------------------------- |
+| `cl_participant` | Register DFSP as participant         | Central Ledger `POST /participants`                              |
+| `cl_position`    | Create SETTLEMENT account            | Central Ledger `POST /participants/:id/accounts`                 |
+| `cl_endpoints`   | Register all 13 FSPIOP callback URLs | Central Ledger `POST /participants/:id/endpoints`                |
+| `cl_ndc`         | Set Net Debit Cap                    | Central Ledger `POST /participants/:id/initialPositionAndLimits` |
+| `db_save`        | Save DFSP record locally             | MySQL `dfsps` table                                              |
+| `admin_user`     | Create admin user in `dfsp_users`    | MySQL                                                            |
+| `welcome_email`  | Send portal credentials email        | SMTP                                                             |
 
-4. Settlement Models
-The system supports dynamic settlement model configuration.
+Each step result is returned in the response — failures are non-fatal (already-exists errors are skipped gracefully).
 
-Examples:
+**Registered callback endpoints (per DFSP):**
 
-Deferred Net Settlement
+| Type                                     | URL Pattern                                                       |
+| ---------------------------------------- | ----------------------------------------------------------------- |
+| `FSPIOP_CALLBACK_URL_TRANSFER_POST`      | `{callback_url}/transfers`                                        |
+| `FSPIOP_CALLBACK_URL_TRANSFER_PUT`       | `{callback_url}/transfers/{{transferId}}`                         |
+| `FSPIOP_CALLBACK_URL_TRANSFER_ERROR`     | `{callback_url}/transfers/{{transferId}}/error`                   |
+| `FSPIOP_CALLBACK_URL_QUOTES`             | `{callback_url}`                                                  |
+| `FSPIOP_CALLBACK_URL_BULK_QUOTES`        | `{callback_url}/bulkQuotes`                                       |
+| `FSPIOP_CALLBACK_URL_BULK_TRANSFER_POST` | `{callback_url}/bulkTransfers`                                    |
+| `FSPIOP_CALLBACK_URL_BULK_TRANSFER_PUT`  | `{callback_url}/bulkTransfers/{{id}}`                             |
+| `FSPIOP_CALLBACK_URL_PARTIES_GET`        | `{callback_url}/parties/{{partyIdType}}/{{partyIdentifier}}`      |
+| `FSPIOP_CALLBACK_URL_PARTIES_PUT`        | `{callback_url}/parties/{{partyIdType}}/{{partyIdentifier}}`      |
+| `FSPIOP_CALLBACK_URL_PARTICIPANT_PUT`    | `{callback_url}/participants/{{partyIdType}}/{{partyIdentifier}}` |
+| ... and more                             |                                                                   |
 
-Gross Settlement
+### Other DFSP Endpoints
 
-Multilateral Settlement
+| Method | Endpoint                       | Description                                                    |
+| ------ | ------------------------------ | -------------------------------------------------------------- |
+| `GET`  | `/api/dfsps`                   | List all DFSPs                                                 |
+| `GET`  | `/api/dfsps/mini`              | Dropdown data (value/label pairs)                              |
+| `GET`  | `/api/dfsps/:dfspId`           | DFSP detail with live CL endpoints, limits, and transfer stats |
+| `PUT`  | `/api/dfsps/:dfspId`           | Update DFSP info + re-register endpoints                       |
+| `GET`  | `/api/dfsps/:dfspId/endpoints` | Live endpoints from Central Ledger                             |
+| `POST` | `/api/dfsps/:dfspId/endpoints` | Re-register all callback endpoints                             |
+| `GET`  | `/api/dfsps/:dfspId/accounts`  | Live accounts from Central Ledger                              |
 
-Capabilities:
+---
 
-Create settlement models
+## Hub Administration
 
-Retrieve settlement models
+Manage the Mojaloop Hub participant accounts, settlement models, and ALS oracles.
 
-Configure settlement behavior
+### Hub Accounts
 
-5. Oracle Configuration
-The platform integrates with Mojaloop ALS Oracle services for party resolution.
+| Method | Endpoint            | Description                               |
+| ------ | ------------------- | ----------------------------------------- |
+| `GET`  | `/api/hub/accounts` | List Hub accounts from Central Ledger     |
+| `POST` | `/api/hub/accounts` | Create Hub account (`{ currency, type }`) |
 
-Supported operations:
+### Settlement Models
 
-Add Oracle endpoints
+| Method | Endpoint                     | Description                                  |
+| ------ | ---------------------------- | -------------------------------------------- |
+| `GET`  | `/api/hub/settlement-models` | List settlement models                       |
+| `POST` | `/api/hub/settlement-models` | Create settlement model (e.g. `DEFERREDNET`) |
 
-Retrieve configured oracles
+### ALS Oracles
 
-Delete Oracle configurations
+| Method   | Endpoint               | Description                 |
+| -------- | ---------------------- | --------------------------- |
+| `GET`    | `/api/hub/oracles`     | List oracles from ALS Admin |
+| `POST`   | `/api/hub/oracles`     | Register new oracle         |
+| `DELETE` | `/api/hub/oracles/:id` | Remove oracle               |
 
-Use cases:
+---
 
-MSISDN lookup
+## Transfer Lifecycle
 
-Party resolution
+### Kafka Consumer Pipeline
 
-Cross-DFSP routing
+R Switch subscribes to **8 Mojaloop Kafka topics** and processes each message transactionally in MySQL. The consumer starts automatically with the server.
 
-6. Kafka Consumer Services
-The server includes Kafka consumer services for processing Mojaloop events in real time.
+```
+Mojaloop Core → Kafka Topics → R Switch Consumer → MySQL
+```
 
-Supported event streams:
+**Subscribed topics:**
 
-Transfer Prepare
+| Topic                            | Handler                 | Description                          |
+| -------------------------------- | ----------------------- | ------------------------------------ |
+| `topic-transfer-prepare`         | `handlePrepare`         | New transfer initiated by payer DFSP |
+| `topic-transfer-position`        | `handlePosition`        | Hub reserved funds in payer position |
+| `topic-transfer-fulfil`          | `handleFulfil`          | Payee DFSP confirmed transfer        |
+| `topic-transfer-reject`          | `handleReject`          | Transfer rejected/aborted            |
+| `topic-timeout-consumer`         | `handleTimeout`         | Transfer expired before fulfil       |
+| `topic-notification-event`       | `handleNotification`    | Hub notified DFSPs of outcome        |
+| `topic-deferredsettlement-close` | `handleSettlementClose` | Settlement window closed             |
+| `topic-admin-transfer`           | `handleAdminTransfer`   | Hub admin operations                 |
 
-Transfer Fulfil
+All handlers use **database transactions** (`BEGIN` / `COMMIT` / `ROLLBACK`) to ensure atomicity. Payload decoding handles both raw JSON and base64-encoded Mojaloop message formats.
 
-Position Events
+---
 
-Notifications
+### Transfer State Machine
 
-Settlement Events
+Each Kafka event drives a transfer through the following state progression:
 
-Benefits:
+```
+[NEW]
+  │
+  ▼  topic-transfer-prepare
+RECEIVED          ← Transfer request arrived, ILP data stored
+  │
+  ▼  topic-transfer-position
+RESERVED          ← Payer's funds reserved, position updated
+  │
+  ├──▶ TIMEOUT    ← topic-timeout-consumer (position rolled back)
+  │
+  ├──▶ FAILED     ← topic-transfer-reject  (position rolled back)
+  │
+  ▼  topic-transfer-fulfil
+COMMITTED         ← Fulfilment accepted, position committed,
+                     reconciliation records created
+```
 
-Real-time monitoring
+**State transition details:**
 
-Event-driven architecture
+| Transition    | Handler          | Position Effect                                           | Recon Created        |
+| ------------- | ---------------- | --------------------------------------------------------- | -------------------- |
+| → `RECEIVED`  | `handlePrepare`  | None                                                      | No                   |
+| → `RESERVED`  | `handlePosition` | `reserved_amount += amount`                               | No                   |
+| → `COMMITTED` | `handleFulfil`   | `current_position += amount`, `reserved_amount -= amount` | Yes (SEND + RECEIVE) |
+| → `FAILED`    | `handleReject`   | `reserved_amount -= amount` (rollback)                    | No                   |
+| → `TIMEOUT`   | `handleTimeout`  | `reserved_amount -= amount` (rollback)                    | No                   |
 
-Async transaction processing
+---
 
-7. Callback Endpoint Configuration
-The system supports dynamic callback endpoint configuration for DFSP integrations.
+### Position Tracking
 
-Examples:
+Every position change is written to `position_changes` with `RESERVE`, `COMMIT`, or `ROLLBACK` type for full audit trail.
 
-Quotes callback
+**Live position endpoint** (proxies directly to Central Ledger):
 
-Transfers callback
-
-Parties callback
-
-Transaction notifications
-
-8. Liquidity Management
-Liquidity management APIs allow monitoring and administration of DFSP liquidity positions.
-
-Features:
-
-Account balances
-
-Position monitoring
-
-Liquidity tracking
-
-Settlement liquidity operations
-
-Technology Stack
-Component	Technology
-Backend Framework	Node.js + Express.js
-HTTP Client	Axios
-Messaging	Kafka
-Core Payment Platform	Mojaloop
-Ledger System	Central Ledger
-Lookup Service	ALS (Account Lookup Service)
-
-
-Hub Controller Documentation
-The hub.controller.js file is responsible for handling core Hub administration APIs.
-
-It communicates directly with:
-
-Central Ledger APIs
-ALS Admin APIs
-using Axios HTTP requests.
-
-Headers Configuration
-Central Ledger Headers
-Used for requests sent to Mojaloop Central Ledger.
-
-const clHeaders = {  'Content-Type': 'application/json',  'fspiop-source': 'switch'};
-Purpose
-
-Defines request content type
-
-Identifies the source DFSP as switch
-
-ALS Headers
-Used for Oracle and ALS-related APIs.
-
-const alsHeaders = 
-{  'Content-Type': 'application/vnd.interoperability.participants+json;version=1.0', 
-'Accept': 'application/vnd.interoperability.participants+json;version=1',
-'Date': new Date().toUTCString(),};
-Purpose
-
-Uses Mojaloop interoperability media types
-
-Ensures FSPIOP compatibility
-
-Provides proper ALS request formatting
-
-Hub Account APIs
-Get Hub Accounts
-Endpoint
-GET /hub/accounts
-Description
-
-Retrieves all Hub accounts configured in Central Ledger.
-
-Central Ledger API
-GET /participants/Hub/accounts
-Function
-
-exports.getHubAccounts
-Response
-
-[  {    "id": 1,    "currency": "USD",    "type": "HUB_RECONCILIATION"  }]
-Create Hub Account
-
-Endpoint
-POST /hub/accounts
-Description
-
-Creates a new Hub account in Central Ledger.
-
-Required Fields
-Field	Type
-currency	string
-type	string
-Request Example
-{  "currency": "USD",  "type": "HUB_MULTILATERAL_SETTLEMENT"}
-Function
-
-exports.createHubAccount
-Settlement Model APIs
-
-Get Settlement Models
-Endpoint
-GET /hub/settlement-models
-Description
-
-Returns all configured settlement models.
-
-Central Ledger API
-GET /settlementModels
-Function
-
-exports.getSettlementModels
-Create Settlement Model
-
-Endpoint
-POST /hub/settlement-models
-Description
-
-Creates a new settlement model configuration.
-
-Function
-exports.createSettlementModel
-Example Request
-
-{  "name": "DEFERREDNET",  "settlementDelay": 60}
-Oracle APIs
-
-Get Oracles
-Endpoint
-GET /hub/oracles
-Description
-
-Retrieves all configured ALS Oracles.
-
-ALS API
-GET /oracles
-Function
-
-exports.getOracles
-Create Oracle
-
-Endpoint
-POST /hub/oracles
-Description
-
-Registers a new Oracle configuration.
-
-Function
-exports.createOracle
-Example Request
-
-{  "endpoint": "http://oracle.domain.com",  "type": "MSISDN"}
-Delete Oracle
-
-Endpoint
-DELETE /hub/oracles/:id
-Description
-
-Deletes an existing Oracle configuration.
-
-Function
-exports.deleteOracle
-Example
-
-DELETE /hub/oracles/1
-Error Handling
-
-All controller methods implement standardized error handling.
-
-Example:
-
-res.status(err.response?.status || 500).json(  err.response?.data || {    error: err.message  });
-Benefits:
-
-Consistent API responses
-
-Proper HTTP status propagation
-
-Easier debugging
-
-Mojaloop error visibility
-
-Architecture Flow
-Client Request      │      ▼R-Switch Server (Express API)      │      ├── Central Ledger APIs      │      ├── ALS Admin APIs      │      ├── Settlement Services      │      └── Kafka Event Consumers
-
-Conclusion
-
-R-Switch Server provides a centralized orchestration and administration layer for Mojaloop-based payment infrastructure.
-
-The platform simplifies:
-
-Hub management
-
-Settlement operations
-
-Oracle administration
-
-DFSP onboarding
-
-Liquidity monitoring
-
-Event processing
-
-while maintaining compatibility with Mojaloop interoperability standards and real-time payment workflows.
-
-DFSP Controller Documentation
-Overview
-The dfsp.controller.js module is responsible for managing DFSP (Digital Financial Service Provider) lifecycle operations inside the R-Switch platform.
-
-The controller integrates with:
-
-Mojaloop Central Ledger
-
-ALS (Account Lookup Service)
-
-MySQL Database
-
-Email Notification Service
-
-This controller automates the entire DFSP onboarding and operational setup process.
-
-Main Responsibilities
-The controller handles:
-
-DFSP registration
-
-Central Ledger participant creation
-
-Settlement account provisioning
-
-Callback endpoint registration
-
-Net Debit Cap configuration
-
-DFSP admin user creation
-
-Welcome email delivery
-
-DFSP information retrieval
-
-Endpoint synchronization
-
-Imported Dependencies
-const { pool } =
- require('../config/db')
-const { v4: uuidv4 } = 
-require('uuid')
-const axios = 
-require('axios')
-const bcrypt = 
-require('bcryptjs')
-const { sendEmail } = 
-require('../services/email.service')
-External Services
-
-Central Ledger
-CENTRAL_LEDGER_URL=http://ledger.domain.com
-Used for:
-
-Participant management
-
-Endpoint registration
-
-Settlement configuration
-
-Limits management
-
-ALS Service
-ALS_URL=http://als.domain.com
-Used for:
-
-Account lookup
-
-Party resolution
-
-Interoperability services
-
-DFSP Onboarding Flow
-The DFSP onboarding process is fully automated.
-
-Workflow
-Create DFSP Request
-
-⬇
-
-Central Ledger Participant Creation
-
-⬇
-
-Settlement Account Setup
-
-⬇
-
-Callback Endpoint Registration
-
-⬇
-
-Net Debit Cap Configuration
-
-⬇
-
-Save DFSP in Database
-
-⬇
-
-Create DFSP Admin User
-
-⬇
-
-Send Welcome Email
-
-Central Ledger Helper Functions
-
-The controller contains multiple helper functions for interacting with Mojaloop Central Ledger APIs.
-
-1. Create Participant
-Function
-clCreateParticipant(dfspId, currency)
-Purpose
-
-Creates a DFSP participant in Mojaloop Central Ledger.
-
-Central Ledger API
-POST /participants
-Request Example
-
-{  "name": "a_bank",  "currency": "BDT"}
-Headers
-
-{  'Content-Type': 'application/json',  
-'fspiop-source': 'NOT_APPLICABLE'}
-2. Settlement Account Creation
-
-Function
-clSetInitialPosition(dfspId, currency)
-Purpose
-
-Creates a settlement account for a DFSP participant.
-
-Central Ledger API
-POST /participants/{dfspId}/accounts
-Request Example
-
-{  "type": "SETTLEMENT",  "currency": "BDT"}
-Important Note
-
-The implementation fixes a Mojaloop compatibility issue.
-
-Unsupported payload:
-
-{  "currency": "BDT",  "initialPosition": 0}
-Supported payload:
-
-{  "type": "SETTLEMENT",  "currency": "BDT"}
-3. Callback Endpoint Registration
-
-Function
-clRegisterEndpoints(dfspId, callbackUrl)
-Purpose
-
-Registers all required Mojaloop callback endpoints for a DFSP.
-
-Supported Endpoints
-Endpoint Type	Description
-FSPIOP_CALLBACK_URL_TRANSFER_POST	Transfer POST callback
-FSPIOP_CALLBACK_URL_TRANSFER_PUT	Transfer PUT callback
-FSPIOP_CALLBACK_URL_TRANSFER_ERROR	Transfer error callback
-FSPIOP_CALLBACK_URL_QUOTES	Quotes callback
-FSPIOP_CALLBACK_URL_BULK_QUOTES	Bulk quote callback
-FSPIOP_CALLBACK_URL_BULK_TRANSFER_POST	Bulk transfer POST
-FSPIOP_CALLBACK_URL_BULK_TRANSFER_PUT	Bulk transfer PUT
-FSPIOP_CALLBACK_URL_BULK_TRANSFER_ERROR	Bulk transfer errors
-FSPIOP_CALLBACK_URL_PARTIES_GET	Party lookup GET
-FSPIOP_CALLBACK_URL_PARTIES_PUT	Party PUT callback
-FSPIOP_CALLBACK_URL_PARTIES_PUT_ERROR	Party error callback
-FSPIOP_CALLBACK_URL_PARTICIPANT_PUT	Participant callback
-FSPIOP_CALLBACK_URL_PARTICIPANT_PUT_ERROR	Participant error callback
-Endpoint Registration Flow
-DFSP
-
-⬇
-
-R-Switch API
-
-⬇
-
-Central Ledger Endpoint Registration
-
-⬇
-
-Mojaloop Callback Routing
-
-4. Net Debit Cap Configuration
-
-Function
-clSetNetDebitCap(dfspId, currency, limit)
-Purpose
-
-Configures liquidity limits for a DFSP.
-
-Central Ledger API
-POST /participants/{dfspId}/initialPositionAndLimits
-Request Example
-
-{  "currency": "BDT",  "limit": {    "type": "NET_DEBIT_CAP",    "value": 10000  },  "initialPosition": 0}
-Important Mojaloop Compatibility Fix
-
-Previous implementation used:
-
-axios.put(...)
-Updated implementation:
-
-axios.post(...)
-This change resolves compatibility issues with newer Mojaloop Central Ledger implementations.
-
-API Endpoints
-GET /dfsps
-Purpose
-Returns all registered DFSPs from the R-Switch database.
-
-Function
-exports.getDfsps
-SQL Query
-
-SELECT * FROM dfsps ORDER BY name ASC
-GET /dfsps/mini
-
-Purpose
-Returns lightweight DFSP data for dropdowns and selectors.
-
-Function
-exports.getMiniDfspsData
-Response Example
-
-{  "data": [    {      "value": "a_bank",      "label": "A Bank"    }  ]}
-GET /dfsps/:dfspId
-
-Purpose
-Returns detailed DFSP information including:
-
-DFSP profile
-
-Transaction statistics
-
-Central Ledger endpoints
-
-Liquidity limits
-
-Function
-exports.getDfspById
-Statistics Returned
-
-Field	Description
-total_transfers	Total transaction count
-committed	Successful transfers
-failed	Failed transfers
-total_volume	Total committed volume
-Central Ledger Synchronization
-The API also retrieves:
-
-Registered endpoints
-
-Liquidity limits
-
-from Mojaloop Central Ledger.
-
-If Central Ledger becomes unavailable, the API still returns local database information.
-
-This ensures:
-
-High availability
-
-Partial fault tolerance
-
-Operational continuity
-
-POST /dfsps
-Purpose
-Creates and provisions a new DFSP.
-
-Function
-exports.createDfsp
-Full Provisioning Process
-
-Step 1 — Create Central Ledger Participant
-Creates the DFSP in Mojaloop Central Ledger.
-
-Step 2 — Settlement Account Provisioning
-Creates settlement accounts for liquidity operations.
-
-Step 3 — Callback Endpoint Registration
-Registers all Mojaloop interoperability callbacks.
-
-Step 4 — Net Debit Cap Setup
-Configures liquidity and risk management limits.
-
-Step 5 — Save DFSP in R-Switch Database
-Stores:
-
-DFSP metadata
-
-Endpoint URLs
-
-Currency configuration
-
-Step 6 — Create DFSP Position Record
-Creates initial liquidity tracking row in:
-
-dfsp_positions
-Step 7 — Create DFSP Admin User
-
-Creates a secure DFSP portal administrator account.
-
-Security Features
-Password hashing using bcrypt
-
-Role-based access
-
-Unique UUID identifiers
-
-User Roles
-Role	Permissions
-ADMIN	Full access
-OPERATOR	Transaction operations
-VIEWER	Read-only access
-Welcome Email Service
-After successful onboarding, the system sends an automated welcome email containing:
-
-Portal URL
-
-Username
-
-Temporary password
-
-Security instructions
-
-Email Features
-Feature	Description
-HTML Template	Professional styled email
-Dynamic Branding	DFSP-specific content
-Credential Delivery	Secure onboarding
-Security Warning	Password change recommendation
-Example Response
-{  "message": "DFSP created successfully",  
-"dfsp_id": "a_bank",  
-"steps": {    "cl_participant": "ok",    "cl_endpoints": "ok",
- "cl_ndc": "ok",    "db_save": "ok",    "admin_user": "created",    
-"welcome_email": "sent"  }}
-
-DFSP Update API
-
-Endpoint
-PUT /dfsps/:dfspId
-Purpose
-
-Updates DFSP information and synchronizes callback endpoints.
-
-Function
-exports.updateDfsp
-Endpoint Synchronization
-
-When callback URLs are updated:
-
-Database records are updated
-
-Central Ledger endpoints are re-registered
-
-This ensures Mojaloop routing consistency.
-
-Get DFSP Endpoints
-Endpoint
-GET /dfsps/:dfspId/endpoints
-Purpose
-
-Retrieves all registered callback endpoints from Central Ledger.
-
-Function
-exports.getDfspEndpoints
-Register Endpoints API
-
-Endpoint
-POST /dfsps/:dfspId/endpoints
-Purpose
-
-Registers or updates DFSP callback endpoints.
-
-Function
-exports.registerEndpoints
-Database Tables Used
-
-Table	Purpose
-dfsps	DFSP master data
-dfsp_positions	Liquidity tracking
-dfsp_users	DFSP portal users
-transfers	Transaction statistics
-Security Features
-Password Security
-Passwords are hashed using:
-
-bcrypt.hash(password, 10)
-UUID-Based Identifiers
-
-All internal records use UUID v4 identifiers for:
-
-Security
-
-Scalability
-
-Distributed compatibility
-
-Fault Tolerance Design
-The controller is designed with resilient provisioning logic.
-
-Features include:
-
-Partial failure handling
-
-Step-by-step execution tracking
-
-Retry-safe onboarding
-
-Existing participant detection
-
-Graceful Central Ledger failure handling
-
-Logging
-The controller includes operational logging for:
-
-DFSP creation
-
-Endpoint registration
-
-Email delivery
-
-Central Ledger synchronization
-
-Error tracking
-
-Example:
-
-console.log(`[DFSP] Endpoints registered: ${dfsp_id}`)
-Architecture Overview
-
-DFSP Portal Request        │        ▼R-Switch DFSP Controller        │        ├── MySQL Database        │        ├── Central Ledger        │        ├── ALS Service        │        ├── Email Service        │        └── Liquidity Services
-
-Conclusion
-
-The dfsp.controller.js module provides a complete DFSP lifecycle management system for Mojaloop-based payment infrastructure.
-
-It automates:
-
-DFSP onboarding
-
-Liquidity provisioning
-
-Callback registration
-
-User management
-
-Security setup
-
-Operational synchronization
-
-while maintaining compatibility with Mojaloop interoperability standards and real-time payment workflows.
-
-Legacy Settlement Flow Documentation
-Overview
-This legacy settlement flow performs:
-
-Settlement window close
-
-Settlement creation
-
-Settlement state transitions
-
-Liquidity restoration using recordFundsIn
-
-Position reset
-
-Reconciliation cleanup
-
-Email notification
-
-This flow was designed to automatically restore DFSP liquidity after settlement completion.
-
-Settlement Lifecycle
-OPEN WINDOW
-⬇
-TRANSFERS EXECUTED
-⬇
-CLOSE WINDOW
-⬇
-CREATE SETTLEMENT
-⬇
-PS_TRANSFERS_RECORDED
-⬇
-PS_TRANSFERS_RESERVED
-⬇
-PS_TRANSFERS_COMMITTED
-⬇
-SETTLED
-⬇
-recordFundsIn (Liquidity Reset)
-⬇
-DFSP POSITIONS RESET TO ZERO
-⬇
-RECONCILIATION COMPLETE
-
-Endpoint
-
-POST /settlement/complete
-Request Body
-
-{  "window_id": "12345",  "reason": "End of day settlement"}
-Field
-Type
-Required
-Description
-
-
-window_id
-string
-NO
-Settlement window ID
-
-reason
-string
-YES
-Settlement reason
-
-
-
-
-Settlement Processing Steps
-STEP 1 — Close Settlement Window
-Description
-Finds OPEN settlement window and closes it.
-
-Mojaloop API
-POST /settlementWindows/{windowId}
-Payload
-
-{  "state": "CLOSED",  "reason": "End of day settlement"}
-Local DB Update
-
-UPDATE settlement_windowsSET status = 'CLOSED'
-STEP 2 — Create Settlement
-
-Description
-Creates deferred net settlement.
-
-Mojaloop API
-POST /settlements
-Payload
-
-{  "reason": "End of day settlement",  "settlementModel": "DEFERREDNET",  "settlementWindows": [    {      "id": 12345    }  ]}
-Output
+```
+GET /api/positions/live/:dfspId
+```
 
 Returns:
 
-settlementId
+```json
+{
+  "dfspId": "DFSP001",
+  "position": 12500.0,
+  "ndc": 50000.0,
+  "settlement": 48000.0,
+  "available": 37500.0,
+  "usedPct": "25.00",
+  "status": "HEALTHY"
+}
+```
 
-participants
+Status thresholds: `HEALTHY` (>30% NDC available) → `LOW` (>0%) → `CRITICAL` (≤0%)
 
-accounts
+**Other position endpoints:**
 
-net settlement positions
+| Method | Endpoint                      | Description                               |
+| ------ | ----------------------------- | ----------------------------------------- |
+| `GET`  | `/api/positions`              | All DFSP positions with available balance |
+| `GET`  | `/api/positions/changes`      | Position change audit log                 |
+| `GET`  | `/api/positions/limits`       | NDC limits per DFSP                       |
+| `POST` | `/api/positions/limits`       | Set initial NDC (POST to CL + DB)         |
+| `PUT`  | `/api/positions/limits`       | Update NDC (PUT to CL + DB transaction)   |
+| `GET`  | `/api/positions/participants` | Active participants from Central Ledger   |
+| `POST` | `/api/positions/deposit`      | Deposit funds to SETTLEMENT account       |
+| `GET`  | `/api/positions/deposits`     | Deposit history with pagination           |
 
-STEP 3 — PS_TRANSFERS_RECORDED
-Description
-Marks settlement transfers as RECORDED.
+**Deposit funds:**
 
-API
-PUT /settlements/{settlementId}
-State
+```
+POST /api/positions/deposit
+Body: { dfsp_id, account_id, currency, amount, reason }
+```
 
-PS_TRANSFERS_RECORDED
-STEP 4 — PS_TRANSFERS_RESERVED
+Validates that the target account is `SETTLEMENT` (not `POSITION`) before calling Central Ledger `recordFundsIn`.
 
-Description
-Reserves settlement liquidity.
+---
 
-State
-PS_TRANSFERS_RESERVED
-STEP 5 — PS_TRANSFERS_COMMITTED
+## Settlement
 
-Description
-Commits reserved settlement transfers.
+R Switch implements **Deferred Net Settlement (DNS)** using the Mojaloop Settlement Service.
 
-State
-PS_TRANSFERS_COMMITTED
-STEP 6 — SETTLED
+### Settlement Window Flow
 
-Description
-Marks settlement as completed by Central Bank.
+```
+OPEN → CLOSED → SETTLED
+```
 
-State
-SETTLED
-STEP 7 — Liquidity Restoration (recordFundsIn)
+| Endpoint                                       | Description                                    |
+| ---------------------------------------------- | ---------------------------------------------- |
+| `GET /api/settlement/windows`                  | List windows (live from service + DB fallback) |
+| `GET /api/settlement/windows/open`             | Open windows only                              |
+| `POST /api/settlement/windows/open`            | Open a new settlement window                   |
+| `POST /api/settlement/windows/:windowId/close` | Close a specific window                        |
+| `GET /api/settlement/positions`                | Net positions per DFSP for a date              |
 
-Description
-Restores DFSP settlement liquidity after settlement completion.
+### Complete Settlement
 
-Each participant:
+```
+POST /api/settlement/complete
+Body: { reason, window_id? }
+```
 
-Fetch participant name
+Executes the full **6-step settlement pipeline** against the Mojaloop Settlement Service:
 
-Find SETTLEMENT account
+| Step | API Call                                          | State                     |
+| ---- | ------------------------------------------------- | ------------------------- |
+| 1    | `POST /settlementWindows/:id` `{ state: CLOSED }` | Window closed             |
+| 2    | `POST /settlements` with `DEFERREDNET` model      | Settlement object created |
+| 3    | `PUT /settlements/:id`                            | `PS_TRANSFERS_RECORDED`   |
+| 4    | `PUT /settlements/:id`                            | `PS_TRANSFERS_RESERVED`   |
+| 5    | `PUT /settlements/:id`                            | `PS_TRANSFERS_COMMITTED`  |
+| 6    | `PUT /settlements/:id`                            | `SETTLED`                 |
 
-Execute recordFundsIn
+After `SETTLED`:
 
-Central Ledger Flow
-Fetch Participants
-GET /participants
-Fetch Accounts
+- Saves per-DFSP `settlement_completed_records` with before/after positions
+- Marks reconciliation records as `MATCHED`
+- Resets all `dfsp_positions.current_position` to `0`
+- Updates `settlement_windows` status to `SETTLED`
 
-GET /participants/{name}/accounts
-Execute recordFundsIn
+Each step result is returned in the response for full auditability. Graceful error handling — if step 2 has no transfers, a clear `3100` error message is returned.
 
-POST /participants/{name}/accounts/{accountId}
-Payload
+### Finalize by Window
 
-{  "transferId": "uuid",  "externalReference": "settlement-reset",  "action": "recordFundsIn",  "reason": "Post-settlement reset",  "amount": {    "amount": "1000",    "currency": "BDT"  }}
-Liquidity Reset Logic
+```
+POST /api/settlement/finalize/:windowId
+Body: { reason }
+```
 
-Positive Settlement Position
-DFSP receives liquidity
-Negative Settlement Position
+Performs **physical fund movements** for each active DFSP based on their net position:
 
-Absolute amount restored after settlement
-Local Database Cleanup
+- **Positive position** (net receiver) → `recordFundsIn` to SETTLEMENT account (credit)
+- **Negative position** (net sender) → `recordFundsOutPrepareReserve` then `recordFundsOutCommit` (2-step debit)
+- **Zero position** → skipped
+- If commit fails → automatic `recordFundsOutAbort` to reverse the reserve
 
-Reconciliation Update
-UPDATE reconciliationSET recon_status = 'MATCHED'
-Reset DFSP Positions
+All movements are saved to `settlement_finalize_records` with `before_amount` and `after_amount` fetched live from Central Ledger.
 
-UPDATE dfsp_positionsSET current_position = 0,    reserved_amount = 0
-Update Settlement Window
+**Settlement record endpoints:**
 
-UPDATE settlement_windowsSET status = 'SETTLED'
-Email Notifications
+| Method | Endpoint                            | Description                               |
+| ------ | ----------------------------------- | ----------------------------------------- |
+| `GET`  | `/api/settlement/finalize-records`  | Finalize records with filters and summary |
+| `GET`  | `/api/settlement/completed-records` | Completed settlement records              |
 
-Description
-Sends settlement completion emails to all participants.
+---
 
-Service
-sendSettlementEmailsToAll()
-Success Response
+## Reconciliation
 
-{  "success": true,  "message": "Settlement completed successfully through all 7 steps",  "settlement_id": "abc123",  "window_id": 12345,  "positions_reset": 4}
-Failure Response
+Automatic dual-entry reconciliation: every `COMMITTED` transfer generates two reconciliation rows — one `SEND` for the payer FSP and one `RECEIVE` for the payee FSP.
 
-{  "error": "Failed at step4_reserved",  "details": {}}
-Database Tables
+Auto-matching runs after `runReconciliation`: transfers with both SEND and RECEIVE rows in `PENDING` are promoted to `MATCHED` in a single SQL `JOIN UPDATE`.
 
-settlement_windows
-Stores settlement lifecycle.
+| Method | Endpoint                     | Description                                              |
+| ------ | ---------------------------- | -------------------------------------------------------- |
+| `GET`  | `/api/reconciliation`        | List with filters: `dfsp_id`, `recon_status`, date range |
+| `POST` | `/api/reconciliation/run`    | Run reconciliation for a settlement date                 |
+| `GET`  | `/api/reconciliation/report` | Net position report per DFSP grouped by currency         |
 
-reconciliation
-Tracks SEND/RECEIVE reconciliation.
+**Reconciliation statuses:** `PENDING` → `MATCHED` / `UNMATCHED` / `DISPUTED`
 
-dfsp_positions
-Tracks DFSP positions.
+**`GET /api/reconciliation` response includes summary:**
 
-settlement_finalize_records
-Stores liquidity movement audit logs.
+```json
+{
+  "summary": { "matched": 120, "unmatched": 3, "pending": 5, "disputed": 0 },
+  "data": [...]
+}
+```
 
-Important Notes
-Automatic Liquidity Restoration
-This legacy flow automatically restored settlement liquidity after settlement completion.
+---
 
-Position Reset
-All DFSP positions were reset to zero after settlement.
+## Notifications Log
 
-Settlement Model
-DEFERREDNET
-Known Limitations
+R Switch records every Mojaloop notification event consumed from Kafka (`topic-notification-event`) into `notifications_log`, tracking which DFSP received which outcome.
 
-Uses sleep() delays
+| Method | Endpoint                                  | Description                                                                            |
+| ------ | ----------------------------------------- | -------------------------------------------------------------------------------------- |
+| `GET`  | `/api/notifications`                      | List with filters: `to_fsp`, `from_fsp`, `transfer_state`, `event_type`, `transfer_id` |
+| `GET`  | `/api/notifications/:id`                  | Single notification detail                                                             |
+| `GET`  | `/api/notifications/transfer/:transferId` | All notifications for a transfer (ordered ASC)                                         |
+| `GET`  | `/api/notifications/stats`                | Summary counts + per-FSP breakdown + 10 most recent                                    |
 
-Large number of Central Ledger API calls
+---
 
-No distributed locking
+## Reports & Excel Export
 
-No idempotency protection
+### JSON Report
 
-Global position reset risk
+```
+GET /api/reports
+```
 
-Potential race conditions
+Supports flexible filtering:
 
-Recommended Improvements
-Add Redis lock
+| Param         | Values                            | Description          |
+| ------------- | --------------------------------- | -------------------- |
+| `date_preset` | `today`, `yesterday`, `this_week` | Quick date shortcuts |
+| `from` / `to` | `YYYY-MM-DD`                      | Custom date range    |
+| `dfsp`        | FSP ID                            | Filter by DFSP       |
+| `direction`   | `SEND`, `RECEIVE`                 | Combined with `dfsp` |
+| `status`      | `COMMITTED`, `FAILED`, etc.       | Filter by status     |
 
-Add retry mechanism
+Returns up to 5,000 transfers with a full summary block (total, committed, failed, reserved, prepared, timeout, total volume, currency count).
 
-Replace sleep() with polling
+### Excel Export
 
-Optimize participant lookup
+```
+GET /api/reports/export
+```
 
-Add transaction consistency
+Same filters as JSON report. Generates a styled `.xlsx` workbook with:
 
-Add structured logging
+- **Summary sheet** — dark-themed stats table with success/failure rates, total volume, average processing time
+- **Transactions sheet** — up to 50,000 rows with frozen header, auto-filter, status-colored rows (`COMMITTED` = green, `FAILED` = red, `RESERVED` = yellow), total formula row
+- Named `r-switch-report-YYYY-MM-DD.xlsx`
 
-Add monitoring and metrics
+---
 
-Mojaloop Kafka Consumer Documentation
-Overview
-This consumer file listens to Mojaloop Kafka topics and processes transfer lifecycle events.
-It manages transfer states, DFSP positions, reconciliation records, settlement windows, and notification logs.
+## Dashboard
 
-The consumer performs the following responsibilities:
+```
+GET /api/dashboard/summary
+Query params: from, to, currency
+```
 
-Connect to Kafka
+Returns a comprehensive switch-wide overview:
 
-Subscribe to Mojaloop topics
+| Field      | Description                                                                       |
+| ---------- | --------------------------------------------------------------------------------- |
+| `summary`  | Total, committed, failed, timeout, received, reserved, cancelled + success rate % |
+| `volumes`  | Total committed volume grouped by currency                                        |
+| `hourly`   | Last 24 hours: total / success / failed per hour                                  |
+| `topDfsps` | Top 5 DFSPs by committed transfer volume                                          |
 
-Decode Mojaloop payloads
+---
 
-Extract transfer information
+## Activity Logs
 
-Handle transfer lifecycle events
+Every successful login (switch operator or DFSP portal) is recorded with IP address and geo-location.
 
-Update database records
+| Method | Endpoint              | Description                                                               |
+| ------ | --------------------- | ------------------------------------------------------------------------- |
+| `GET`  | `/api/activity`       | Paginated logs with filters: `type`, `username`, `ip_address`, date range |
+| `GET`  | `/api/activity/stats` | Summary stats + last 7 days daily chart + top 10 users                    |
 
-Maintain audit/state logs
+**Log fields:** `username`, `email`, `login_time`, `ip_address`, `location` (City, Country via geoip), `type` (`switch` or `dfsp`)
 
-Manage liquidity positions
+---
 
-Process settlement reconciliation
+## Database Schema Overview
 
-File Imports
-const { consumer, TOPICS } = require('../config/kafka');const { pool } = require('../config/db');const { v4: uuidv4 } = require('uuid');
-Dependencies
+| Table                          | Purpose                                                    |
+| ------------------------------ | ---------------------------------------------------------- |
+| `users`                        | Switch portal operators                                    |
+| `dfsp_users`                   | DFSP portal admin accounts                                 |
+| `dfsps`                        | Registered participant FSPs                                |
+| `transfers`                    | Full transfer records (from Kafka)                         |
+| `transfer_state_log`           | State transition history per transfer                      |
+| `dfsp_positions`               | Current position and NDC per DFSP                          |
+| `dfsp_limits`                  | NDC limit change history                                   |
+| `position_changes`             | Per-transfer position deltas (RESERVE / COMMIT / ROLLBACK) |
+| `dfsp_deposits`                | Settlement account deposit records                         |
+| `reconciliation`               | Dual-entry recon records (SEND + RECEIVE)                  |
+| `notifications_log`            | Kafka notification events per transfer                     |
+| `settlement_windows`           | Settlement window lifecycle                                |
+| `settlement_completed_records` | Per-DFSP position snapshots after settlement               |
+| `settlement_finalize_records`  | Physical fund movement logs (credit/debit actions)         |
+| `activity_logs`                | Login audit trail                                          |
 
-Dependency	Description
-consumer	Kafka consumer instance
-TOPICS	Kafka topic constants
-pool	MySQL connection pool
-uuidv4	UUID generator for unique IDs
-Consumer Architecture
-Kafka Topic    ↓Consumer Receives Message    ↓Decode Payload    ↓Extract Transfer Data    ↓Route to Event Handler    ↓Update Database    ↓Save State Logs
-Payload Decoder
+---
 
-decodePayload(payload)
-This function decodes Mojaloop payloads.
+## Kafka Topics
+
+```javascript
+const TOPICS = {
+  TRANSFER_PREPARE: 'topic-transfer-prepare',
+  TRANSFER_POSITION: 'topic-transfer-position',
+  TRANSFER_FULFIL: 'topic-transfer-fulfil',
+  TRANSFER_REJECT: 'topic-transfer-reject',
+  TRANSFER_GET: 'topic-transfer-get',
+  TIMEOUT: 'topic-timeout-consumer',
+  NOTIFICATION: 'topic-notification-event',
+  SETTLEMENT_CLOSE: 'topic-deferredsettlement-close',
+  ADMIN_TRANSFER: 'topic-admin-transfer',
+};
+```
 
-Mojaloop payloads may arrive in different formats:
+Consumer config: `groupId: r-switch-db-saver`, `sessionTimeout: 30s`, `heartbeatInterval: 3s`, retry with 10 attempts.
+
+Payload decoding handles both raw JSON and `base64,<data>` encoded Mojaloop message formats automatically.
+
+---
+
+## API Reference
 
-Plain JavaScript object
+### Auth
+
+| Method | Endpoint               | Auth | Description                             |
+| ------ | ---------------------- | ---- | --------------------------------------- |
+| `POST` | `/api/auth/login`      | —    | Step 1: Submit credentials, receive OTP |
+| `POST` | `/api/auth/verify-otp` | —    | Step 2: Verify OTP, receive JWT         |
+| `POST` | `/api/auth/dfsp-token` | —    | Issue DFSP portal token                 |
+| `GET`  | `/api/auth/users`      | JWT  | List switch users                       |
+| `POST` | `/api/auth/users`      | JWT  | Create switch user                      |
+| `PUT`  | `/api/auth/users/:id`  | JWT  | Update user role/status                 |
 
-JSON string
+### DFSPs
+
+| Method | Endpoint                       | Description             |
+| ------ | ------------------------------ | ----------------------- |
+| `GET`  | `/api/dfsps`                   | All DFSPs               |
+| `GET`  | `/api/dfsps/mini`              | Dropdown data           |
+| `POST` | `/api/dfsps`                   | Create + provision DFSP |
+| `GET`  | `/api/dfsps/:dfspId`           | DFSP detail             |
+| `PUT`  | `/api/dfsps/:dfspId`           | Update DFSP             |
+| `GET`  | `/api/dfsps/:dfspId/endpoints` | CL endpoints            |
+| `POST` | `/api/dfsps/:dfspId/endpoints` | Re-register endpoints   |
+| `GET`  | `/api/dfsps/:dfspId/accounts`  | CL accounts             |
 
-Base64 encoded payload
+### Transfers
 
-Supported Payload Formats
-Plain Object
-{  transferId: '123'}
-JSON String
+| Method | Endpoint                     | Description                    |
+| ------ | ---------------------------- | ------------------------------ |
+| `GET`  | `/api/transfers`             | List with filters + pagination |
+| `GET`  | `/api/transfers/:transferId` | Detail + full state history    |
+| `GET`  | `/api/transfers/stats`       | Aggregated stats               |
 
-'{"transferId":"123"}'
-Base64 Encoded Payload
+### Positions & Limits
 
-data:application/json;base64,XXXXX
-Features
+| Method | Endpoint                      | Description                   |
+| ------ | ----------------------------- | ----------------------------- |
+| `GET`  | `/api/positions`              | All DFSP positions            |
+| `GET`  | `/api/positions/live/:dfspId` | Live position from CL         |
+| `GET`  | `/api/positions/changes`      | Position change log           |
+| `GET`  | `/api/positions/limits`       | NDC limits                    |
+| `POST` | `/api/positions/limits`       | Set NDC                       |
+| `PUT`  | `/api/positions/limits`       | Update NDC                    |
+| `POST` | `/api/positions/deposit`      | Deposit to settlement account |
+| `GET`  | `/api/positions/deposits`     | Deposit history               |
+| `GET`  | `/api/positions/participants` | Active CL participants        |
 
-Automatically detects payload type
+### Settlement
 
-Decodes base64 payloads
+| Method | Endpoint                                  | Description                  |
+| ------ | ----------------------------------------- | ---------------------------- |
+| `GET`  | `/api/settlement/windows`                 | List windows                 |
+| `GET`  | `/api/settlement/windows/open`            | Open windows                 |
+| `POST` | `/api/settlement/windows/open`            | Open window                  |
+| `POST` | `/api/settlement/windows/:windowId/close` | Close window                 |
+| `POST` | `/api/settlement/complete`                | Run full 6-step settlement   |
+| `POST` | `/api/settlement/finalize/:windowId`      | Physical fund movements      |
+| `GET`  | `/api/settlement/positions`               | Net positions by date        |
+| `GET`  | `/api/settlement/finalize-records`        | Finalize movement records    |
+| `GET`  | `/api/settlement/completed-records`       | Completed settlement records |
 
-Parses JSON strings
+### Reconciliation
 
-Returns normalized object
+| Method | Endpoint                     | Description               |
+| ------ | ---------------------------- | ------------------------- |
+| `GET`  | `/api/reconciliation`        | List recon records        |
+| `POST` | `/api/reconciliation/run`    | Run for a settlement date |
+| `GET`  | `/api/reconciliation/report` | Net position report       |
 
-Prevents parsing failures
+### Hub
 
-Return Structure
-{  transferId,  payerFsp,  payeeFsp}
-Payload Extractor
+| Method   | Endpoint                     | Description             |
+| -------- | ---------------------------- | ----------------------- |
+| `GET`    | `/api/hub/accounts`          | Hub accounts            |
+| `POST`   | `/api/hub/accounts`          | Create Hub account      |
+| `GET`    | `/api/hub/settlement-models` | Settlement models       |
+| `POST`   | `/api/hub/settlement-models` | Create settlement model |
+| `GET`    | `/api/hub/oracles`           | ALS oracles             |
+| `POST`   | `/api/hub/oracles`           | Create oracle           |
+| `DELETE` | `/api/hub/oracles/:id`       | Delete oracle           |
 
-extractPayload(raw)
-This function extracts important Mojaloop transfer information from raw Kafka messages.
+### Notifications
 
-Extracted Fields
-Field	Description
-transferId	Unique transfer ID
-payerFsp	Sender DFSP
-payeeFsp	Receiver DFSP
-amount	Transfer amount
-currency	Currency code
-transactionId	Transaction ID
-quoteId	Quote ID
-ilpPacket	ILP packet
-condition	Transfer condition
-expiration	Expiration timestamp
-fulfilment	Fulfilment value
-transferState	Current transfer state
-errorCode	Error code
-errorMessage	Error message
-eventType	Kafka event type
-Helper Functions
-saveStateLog()
-Stores transfer lifecycle audit logs.
+| Method | Endpoint                                  | Description         |
+| ------ | ----------------------------------------- | ------------------- |
+| `GET`  | `/api/notifications`                      | List notifications  |
+| `GET`  | `/api/notifications/:id`                  | Single notification |
+| `GET`  | `/api/notifications/transfer/:transferId` | By transfer ID      |
+| `GET`  | `/api/notifications/stats`                | Summary stats       |
 
-Purpose
-Tracks every transfer state transition for audit and monitoring purposes.
+### Reports
 
-Database Table
-transfer_state_log
-Stored Fields
+| Method | Endpoint              | Description            |
+| ------ | --------------------- | ---------------------- |
+| `GET`  | `/api/reports`        | JSON report data       |
+| `GET`  | `/api/reports/export` | Excel `.xlsx` download |
 
-Field	Description
-transfer_id	Transfer identifier
-previous_status	Previous transfer state
-new_status	New transfer state
-event_type	Event type
-direction	INBOUND / OUTBOUND / INTERNAL
-from_dfsp	Source DFSP
-to_dfsp	Destination DFSP
-raw_payload	Original Kafka payload
-getTransfer()
-Retrieves a transfer from the database.
+### Dashboard & Activity
 
-SQL Query
-SELECT * FROM transfers WHERE transfer_id = ?
-Transfer Lifecycle Event Handlers
+| Method | Endpoint                 | Description                  |
+| ------ | ------------------------ | ---------------------------- |
+| `GET`  | `/api/dashboard/summary` | Switch-wide summary          |
+| `GET`  | `/api/activity`          | Login activity logs          |
+| `GET`  | `/api/activity/stats`    | Activity stats + daily chart |
 
-1. handlePrepare()
-Purpose
-Handles TRANSFER_PREPARE events.
+---
 
-This is the initial stage of a transfer.
+## Security
 
-Transfer State
-RECEIVED
-Workflow
+- **OTP login** — switch operators must verify a time-limited email OTP before receiving a JWT; no direct credential-to-token flow
+- **Dual JWT secrets** — switch portal (`JWT_SECRET`) and DFSP portals (`DFSP_PORTAL_SECRET`) use separate signing keys
+- **bcryptjs** — all passwords hashed with salt rounds of 10
+- **Parameterized queries** — all MySQL queries use `?` placeholders, no string interpolation
+- **IP + geo logging** — every login records IP address and physical location for audit
+- **Non-fatal CL failures** — Central Ledger step failures on DFSP creation return detailed step results without masking errors
 
-Kafka PREPARE Event
-⬇
-Extract Payload
-⬇
-Insert Transfer Record
-⬇
-Set Status = RECEIVED
-⬇
-Save State Log
+---
 
+## License
 
-Database Operations
-
-Insert Transfer
-INSERT INTO transfers (...)
-Updated Tables
-
-Table	Action
-transfers	Insert or update transfer
-transfer_state_log	Save state transition
-Key Features
-Uses ON DUPLICATE KEY UPDATE for idempotency
-
-Stores ILP packet and transfer condition
-
-Saves payer and payee DFSP information
-
-2. handlePosition()
-Purpose
-Handles liquidity reservation events.
-
-Transfer State Transition
-RECEIVED → RESERVED
-Workflow
-
-Find Transfer    ↓Reserve DFSP Position    ↓Update Reserved Amount    ↓Insert Position Change    ↓Save State Log
-Database Operations
-
-Table	Purpose
-transfers	Update transfer status
-dfsp_positions	Reserve liquidity
-position_changes	Save audit records
-transfer_state_log	Track state changes
-Position Change Type
-RESERVE
-Position Logic
-
-The payer DFSP reserved amount increases when funds are reserved.
-
-3. handleFulfil()
-Purpose
-Handles transfer fulfilment events.
-
-Transfer State Transition
-RESERVED → COMMITTED
-Workflow
-
-Receive Fulfil Event        ↓Update Transfer Status        ↓Save Fulfilment        ↓Create Reconciliation Records        ↓Commit DFSP Position        ↓Save State Log
-Updated Tables
-
-Table	Purpose
-transfers	Commit transfer
-reconciliation	Create settlement records
-dfsp_positions	Commit liquidity
-position_changes	Save audit trail
-transfer_state_log	Track lifecycle
-Reconciliation Entries
-Two reconciliation rows are created.
-
-SEND Entry
-transfer_type = SEND
-RECEIVE Entry
-
-transfer_type = RECEIVE
-Position Change Type
-
-COMMIT
-Important Note
-
-FULFIL payloads may not contain amount or currency.
-The consumer retrieves them from the transfers table.
-
-4. handleReject()
-Purpose
-Handles failed transfer events.
-
-Transfer State
-FAILED
-
-
-Workflow
-
-Reject Event
-
-⬇
-
-Update Transfer Status
-
-⬇
-
-Release Reserved Liquidity
-
-⬇
-
-Insert Rollback Position Change
-
-⬇
-
-Save State Log
-
-
-Updated Tables
-
-Table	Purpose
-transfers	Update failed status
-dfsp_positions	Release reserved amount
-position_changes	Insert rollback log
-transfer_state_log	Save audit log
-Position Change Type
-ROLLBACK
-
-
-Error Information
-
-Stores:
-
-errorCode
-
-errorMessage
-
-inside the transfers table.
-
-5. handleTimeout()
-Purpose
-Handles expired transfer events.
-
-Supported Previous States
-RECEIVEDRESERVED
-Final State
-
-TIMEOUT
-Workflow
-
-Timeout Event    ↓Update Status    ↓Release Reserved Amount    ↓Insert Rollback Log
-Updated Tables
-
-Table	Purpose
-transfers	Update timeout state
-dfsp_positions	Release reserved liquidity
-position_changes	Rollback audit
-transfer_state_log	State tracking
-6. handleNotification()
-Purpose
-Stores outgoing notification events.
-
-Database Table
-notifications_log
-Stored Data
-
-Field	Description
-transfer_id	Transfer ID
-to_fsp	Destination DFSP
-from_fsp	Source DFSP
-event_type	Notification type
-transfer_state	Current state
-payload	Full Kafka payload
-Direction
-OUTBOUND
-Features
-
-Stores raw notification payload
-
-Tracks transfer notification events
-
-Maintains audit logs
-
-7. handleSettlementClose()
-Purpose
-Handles settlement window closing.
-
-Workflow
-Settlement Window Closed        ↓Update Settlement Window        ↓Match Reconciliation Records        ↓Reset DFSP Positions
-
-
-Updated Tables
-
-Table	Purpose
-settlement_windows	Store settlement lifecycle
-reconciliation	Mark records as MATCHED
-dfsp_positions	Reset balances
-Reconciliation Status
-MATCHED
-
-
-Settlement Logic
-
-SEND and RECEIVE reconciliation records are matched
-
-Settlement ID is assigned
-
-DFSP positions are reset
-
-8. handleAdminTransfer()
-Purpose
-Handles internal/admin transfer events.
-
-Workflow
-Receive Admin Event        ↓Save State Log
-Main Functionality
-
-Stores admin transfer lifecycle logs
-
-Tracks internal transfer actions
-
-Kafka Consumer Startup
-startConsumer()
-Initializes and starts the Kafka consumer.
-
-Workflow
-Connect Kafka      ↓Subscribe Topics      ↓Listen for Messages      ↓Parse Payload      ↓Route to Handler
-Subscribed Topics
-
-Topic	Handler
-TRANSFER_PREPARE	handlePrepare
-TRANSFER_POSITION	handlePosition
-TRANSFER_FULFIL	handleFulfil
-TRANSFER_REJECT	handleReject
-TIMEOUT	handleTimeout
-NOTIFICATION	handleNotification
-SETTLEMENT_CLOSE	handleSettlementClose
-ADMIN_TRANSFER	handleAdminTransfer
-Kafka Message Processing
-consumer.run({  eachMessage: async ({ topic, message }) => {}});
-Topic Routing
-
-The consumer routes messages using:
-
-switch (topic)
-Transaction Management
-
-Most handlers use database transactions.
-
-Transaction Flow
-beginTransaction()      ↓Execute Queries      ↓commit()
-If an error occurs:
-
-rollback()
-Error Handling
-
-Every handler uses:
-
-try {}catch(err) {}finally {}
-Logging
-
-Success Logs
- [PREPARE]  [POSITION] [FULFIL] [REJECT]
-Error Logs
-
- [TIMEOUT] [SETTLEMENT] [NOTIFICATION]
-Database Tables Used
-
-Table	Purpose
-transfers	Main transfer records
-transfer_state_log	Lifecycle tracking
-dfsp_positions	Liquidity positions
-position_changes	Position audit logs
-reconciliation	Settlement reconciliation
-settlement_windows	Settlement lifecycle
-notifications_log	Notification storage
-# Complete Transfer Lifecycle
-PREPARE
-
-⬇
-
-RECEIVED
-
-⬇
-
-POSITION
-
-⬇
-
-RESERVED
-
-⬇
-
-FULFIL
-
-⬇
-
-COMMITTED
-
-# Failure Lifecycle
-
-PREPARE
-
-⬇
-
-RECEIVED
-
-⬇
-
-REJECT / TIMEOUT
-
-⬇
-
-FAILED / TIMEOUT
-
-# Important Features
-
-Base64 Payload Support
-Supports Mojaloop base64 encoded payloads.
-
-Idempotency
-Uses:
-
-ON DUPLICATE KEY UPDATE
-to safely handle duplicate transfer events.
-
-Audit Tracking
-Every transfer state transition is logged.
-
-Liquidity Management
-Tracks:
-
-Reserved liquidity
-
-Current positions
-
-Rollbacks
-
-Commit operations
-
-Reconciliation Support
-Automatically creates reconciliation entries during fulfilment.
-
-Settlement Support
-Settlement close events automatically:
-
-Match reconciliation rows
-
-Assign settlement IDs
-
-Reset positions
-
-Export
-module.exports = { startConsumer };
-Usage Example
-
-const { startConsumer } = require('./consumer');startConsumer();
-Summary
-
-This Kafka consumer is a production-grade Mojaloop event processing system.
-
-It manages:
-
-Transfer lifecycle processing
-
-Liquidity reservation
-
-Transfer fulfilment
-
-Failure handling
-
-Settlement reconciliation
-
-Notification tracking
-
-Audit logging
-
-Timeout recovery
-
-Position management
-
-The architecture is fully event-driven and designed for scalable payment switch systems.
+Private — R Switch / Bangladeshi Software LTD. All rights reserved.
