@@ -85,41 +85,41 @@ A production-grade **National Payment Switch** built on [Mojaloop](https://mojal
 Create `.env` in the project root:
 
 ```dotenv
-# ── Server ────────────────────────────────────────────────────
+# Server
 PORT=4000
 NODE_ENV=production
 
-# ── MySQL ─────────────────────────────────────────────────────
+# MySQL
 DB_HOST=localhost
 DB_PORT=3306
 DB_USER=root
 DB_PASSWORD=your_db_password
 DB_NAME=r_switch
 
-# ── Kafka ─────────────────────────────────────────────────────
+# Kafka
 KAFKA_BROKER=your-vm-ip:9092
 KAFKA_GROUP_ID=r-switch-db-saver
 KAFKA_CLIENT_ID=r-switch-portal
 
-# ── JWT ───────────────────────────────────────────────────────
+# JWT
 JWT_SECRET=your_switch_jwt_secret
 DFSP_PORTAL_SECRET=your_dfsp_portal_secret
 JWT_EXPIRES_IN=365d
 
-# ── Mojaloop Services ─────────────────────────────────────────
+# Mojaloop Services
 CENTRAL_LEDGER_URL=https://your-ledger.domain.com
 SETTLEMENT_URL=https://your-settlement.domain.com/version
 ALS_URL=https://your-als.domain.com
 ALS_ADMIN_URL=https://your-als-admin.domain.com
 
-# ── Email (SMTP) ──────────────────────────────────────────────
+# Email (SMTP)
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_USER=noreply@example.com
 SMTP_PASS=your_smtp_password
 SMTP_FROM="R Switch Portal" <noreply@example.com>
 
-# ── Portal ────────────────────────────────────────────────────
+# Portal
 DFSP_PORTAL_URL=https://your.dfsp-portal.com
 ```
 
