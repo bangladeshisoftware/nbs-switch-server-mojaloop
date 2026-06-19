@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: May 05, 2026 at 10:46 AM
+-- Generation Time: Jun 19, 2026 at 02:30 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -18,8 +18,24 @@ SET time_zone = "+00:00";
 /*!40101 SET NAMES utf8mb4 */;
 
 --
--- Database: `r_switch`
+-- Database: `mks_db`
 --
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `activity_logs`
+--
+
+CREATE TABLE `activity_logs` (
+  `id` int(11) NOT NULL,
+  `username` varchar(100) NOT NULL,
+  `email` varchar(150) NOT NULL,
+  `login_time` datetime NOT NULL DEFAULT current_timestamp(),
+  `ip_address` varchar(45) DEFAULT NULL,
+  `location` varchar(255) DEFAULT NULL,
+  `type` varchar(12) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 
 -- --------------------------------------------------------
 
@@ -43,6 +59,22 @@ CREATE TABLE `dfsps` (
   `phone` varchar(20) DEFAULT NULL,
   `address` text DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `dfsp_deposits`
+--
+
+CREATE TABLE `dfsp_deposits` (
+  `id` varchar(36) NOT NULL,
+  `dfsp_id` varchar(100) NOT NULL,
+  `account_id` varchar(50) DEFAULT NULL,
+  `currency` varchar(10) DEFAULT NULL,
+  `amount` decimal(18,4) DEFAULT NULL,
+  `reason` text DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 
 -- --------------------------------------------------------
 
@@ -94,6 +126,7 @@ CREATE TABLE `dfsp_users` (
   `is_active` tinyint(1) DEFAULT 1,
   `otp` varchar(10) DEFAULT NULL,
   `otp_expires_at` datetime DEFAULT NULL,
+  `token` text DEFAULT NULL,
   `last_login` datetime DEFAULT NULL,
   `created_at` datetime DEFAULT current_timestamp(),
   `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
@@ -154,6 +187,25 @@ CREATE TABLE `notifications_log` (
   `payload` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`payload`)),
   `created_at` datetime DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `pisps`
+--
+
+CREATE TABLE `pisps` (
+  `id` varchar(36) NOT NULL,
+  `pisp_id` varchar(100) NOT NULL,
+  `name` varchar(200) NOT NULL,
+  `short_name` varchar(50) DEFAULT NULL,
+  `callback_url` varchar(300) DEFAULT NULL,
+  `currency` varchar(10) DEFAULT 'BDT',
+  `status` enum('ACTIVE','INACTIVE','SUSPENDED') DEFAULT 'ACTIVE',
+  `note` text DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 
 -- --------------------------------------------------------
 
@@ -223,6 +275,72 @@ CREATE TABLE `reconciliation` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `settlement_completed_records`
+--
+
+CREATE TABLE `settlement_completed_records` (
+  `id` varchar(36) NOT NULL,
+  `window_id` varchar(50) NOT NULL,
+  `settlement_id` varchar(50) DEFAULT NULL,
+  `dfsp_name` varchar(100) NOT NULL,
+  `before_position` decimal(18,4) DEFAULT NULL,
+  `after_position` decimal(18,4) DEFAULT 0.0000,
+  `currency` varchar(10) DEFAULT 'BDT',
+  `net_amount` decimal(18,4) DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `settlement_finalizations`
+--
+
+CREATE TABLE `settlement_finalizations` (
+  `id` varchar(36) NOT NULL,
+  `settlement_id` varchar(50) NOT NULL,
+  `window_id` varchar(50) DEFAULT NULL,
+  `participant_name` varchar(100) DEFAULT NULL,
+  `participant_id` int(11) DEFAULT NULL,
+  `account_id` int(11) DEFAULT NULL,
+  `action` enum('recordFundsIn','recordFundsOut') NOT NULL,
+  `net_amount` decimal(18,4) DEFAULT NULL,
+  `abs_amount` decimal(18,4) DEFAULT NULL,
+  `currency` varchar(10) DEFAULT NULL,
+  `status` enum('ok','failed','skipped') DEFAULT 'ok',
+  `effect` text DEFAULT NULL,
+  `error` text DEFAULT NULL,
+  `reason` text DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `settlement_finalize_records`
+--
+
+CREATE TABLE `settlement_finalize_records` (
+  `id` varchar(36) NOT NULL,
+  `window_id` varchar(50) NOT NULL,
+  `settlement_id` varchar(50) DEFAULT NULL,
+  `dfsp_name` varchar(100) NOT NULL,
+  `type` enum('credit','debit') NOT NULL,
+  `action` varchar(60) NOT NULL,
+  `status` enum('prepare','commit','abort','ok','failed') NOT NULL,
+  `amount` decimal(18,4) NOT NULL,
+  `before_amount` decimal(18,4) DEFAULT NULL,
+  `after_amount` decimal(18,4) DEFAULT NULL,
+  `currency` varchar(10) DEFAULT 'BDT',
+  `position_value` decimal(18,4) DEFAULT NULL,
+  `error` text DEFAULT NULL,
+  `reason` text DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `settlement_windows`
 --
 
@@ -234,7 +352,8 @@ CREATE TABLE `settlement_windows` (
   `closed_at` datetime DEFAULT NULL,
   `settled_at` datetime DEFAULT NULL,
   `created_at` datetime DEFAULT current_timestamp(),
-  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `finalized_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -270,7 +389,7 @@ CREATE TABLE `simulate_transfers` (
   `expiration` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 
 -- --------------------------------------------------------
 
@@ -343,11 +462,17 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`id`, `username`, `email`, `password`, `role`, `is_active`, `otp`, `otp_expires_at`, `last_login`, `created_at`, `updated_at`) VALUES
-('9ebf56b6-5b40-4df3-a0e1-d64f8f2a8b4f', 'newuser', 'your-email@gmail.com', '$2a$10$7dVOkhlaIg/4pAjvZ0j7Ret5K9JPKqh5GWVoHze3izQpH4TKe7ANK', 'ADMIN', 1, NULL, NULL, '2026-02-24 18:59:23', '2026-02-22 09:23:58', '2026-05-05 14:43:46');
+('9ebf56b6-5b40-4df3-a0e1-d64f8f2a8b4f', 'newuser', 'default-user@gmail.com', '$2a$10$7dVOkhlaIg/4pAjvZ0j7Ret5K9JPKqh5GWVoHze3izQpH4TKe7ANK', 'ADMIN', 1, NULL, NULL, '2026-04-01 06:54:22', '2026-02-22 09:23:58', '2026-06-19 06:30:10');
 
 --
 -- Indexes for dumped tables
 --
+
+--
+-- Indexes for table `activity_logs`
+--
+ALTER TABLE `activity_logs`
+  ADD PRIMARY KEY (`id`);
 
 --
 -- Indexes for table `dfsps`
@@ -355,6 +480,12 @@ INSERT INTO `users` (`id`, `username`, `email`, `password`, `role`, `is_active`,
 ALTER TABLE `dfsps`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `dfsp_id` (`dfsp_id`);
+
+--
+-- Indexes for table `dfsp_deposits`
+--
+ALTER TABLE `dfsp_deposits`
+  ADD PRIMARY KEY (`id`);
 
 --
 -- Indexes for table `dfsp_limits`
@@ -394,6 +525,14 @@ ALTER TABLE `notifications_log`
   ADD KEY `idx_transfer_id` (`transfer_id`);
 
 --
+-- Indexes for table `pisps`
+--
+ALTER TABLE `pisps`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `pisp_id` (`pisp_id`),
+  ADD KEY `idx_status` (`status`);
+
+--
 -- Indexes for table `position_changes`
 --
 ALTER TABLE `position_changes`
@@ -416,6 +555,39 @@ ALTER TABLE `reconciliation`
   ADD KEY `idx_dfsp_id` (`dfsp_id`),
   ADD KEY `idx_recon_status` (`recon_status`),
   ADD KEY `idx_settlement_id` (`settlement_id`);
+
+--
+-- Indexes for table `settlement_completed_records`
+--
+ALTER TABLE `settlement_completed_records`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_window_id` (`window_id`),
+  ADD KEY `idx_settlement_id` (`settlement_id`),
+  ADD KEY `idx_dfsp_name` (`dfsp_name`),
+  ADD KEY `idx_created_at` (`created_at`);
+
+--
+-- Indexes for table `settlement_finalizations`
+--
+ALTER TABLE `settlement_finalizations`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_settlement_id` (`settlement_id`),
+  ADD KEY `idx_window_id` (`window_id`),
+  ADD KEY `idx_participant` (`participant_name`),
+  ADD KEY `idx_status` (`status`),
+  ADD KEY `idx_created_at` (`created_at`);
+
+--
+-- Indexes for table `settlement_finalize_records`
+--
+ALTER TABLE `settlement_finalize_records`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_window_id` (`window_id`),
+  ADD KEY `idx_settlement_id` (`settlement_id`),
+  ADD KEY `idx_dfsp_name` (`dfsp_name`),
+  ADD KEY `idx_status` (`status`),
+  ADD KEY `idx_type` (`type`),
+  ADD KEY `idx_created_at` (`created_at`);
 
 --
 -- Indexes for table `settlement_windows`
@@ -461,6 +633,16 @@ ALTER TABLE `users`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `username` (`username`),
   ADD UNIQUE KEY `email` (`email`);
+
+--
+-- AUTO_INCREMENT for dumped tables
+--
+
+--
+-- AUTO_INCREMENT for table `activity_logs`
+--
+ALTER TABLE `activity_logs`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=27;
 
 --
 -- Constraints for dumped tables
