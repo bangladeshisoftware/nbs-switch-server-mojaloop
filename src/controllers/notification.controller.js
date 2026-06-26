@@ -1,3 +1,10 @@
+/**************************************************************************
+ * Copyright © 2026 Bangladeshi Software Ltd. All rights reserved.
+ * Distributed under the license terms specified in this repository.
+ *
+ * ORIGINAL AUTHOR: Muhammad Nasim (Developer)
+ **************************************************************************/
+
 const { pool } = require('../config/db');
 
 exports.getNotifications = async (req, res) => {
@@ -8,23 +15,39 @@ exports.getNotifications = async (req, res) => {
       transfer_state,
       event_type,
       transfer_id,
-      page  = 1,
+      page = 1,
       limit = 20,
     } = req.query;
 
-    const offset     = (parseInt(page) - 1) * parseInt(limit);
+    const offset = (parseInt(page) - 1) * parseInt(limit);
     const conditions = [];
-    const values     = [];
+    const values = [];
 
-    if (to_fsp)         { conditions.push(`to_fsp = ?`);         values.push(to_fsp); }
-    if (from_fsp)       { conditions.push(`from_fsp = ?`);       values.push(from_fsp); }
-    if (transfer_state) { conditions.push(`transfer_state = ?`); values.push(transfer_state); }
-    if (event_type)     { conditions.push(`event_type = ?`);     values.push(event_type); }
-    if (transfer_id)    { conditions.push(`transfer_id = ?`);    values.push(transfer_id); }
+    if (to_fsp) {
+      conditions.push(`to_fsp = ?`);
+      values.push(to_fsp);
+    }
+    if (from_fsp) {
+      conditions.push(`from_fsp = ?`);
+      values.push(from_fsp);
+    }
+    if (transfer_state) {
+      conditions.push(`transfer_state = ?`);
+      values.push(transfer_state);
+    }
+    if (event_type) {
+      conditions.push(`event_type = ?`);
+      values.push(event_type);
+    }
+    if (transfer_id) {
+      conditions.push(`transfer_id = ?`);
+      values.push(transfer_id);
+    }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const [rows] = await pool.execute(`
+    const [rows] = await pool.execute(
+      `
       SELECT
         id,
         transfer_id,
@@ -38,20 +61,20 @@ exports.getNotifications = async (req, res) => {
       ${where}
       ORDER BY created_at DESC
       LIMIT ? OFFSET ?`,
-      [...values, parseInt(limit), offset]
+      [...values, parseInt(limit), offset],
     );
 
     const [[{ total }]] = await pool.execute(
       `SELECT COUNT(*) as total FROM notifications_log ${where}`,
-      values
+      values,
     );
 
     res.json({
-      total:  parseInt(total),
-      page:   parseInt(page),
-      limit:  parseInt(limit),
-      pages:  Math.ceil(total / parseInt(limit)),
-      data:   rows,
+      total: parseInt(total),
+      page: parseInt(page),
+      limit: parseInt(limit),
+      pages: Math.ceil(total / parseInt(limit)),
+      data: rows,
     });
   } catch (err) {
     console.error('getNotifications error:', err.message);
@@ -64,7 +87,8 @@ exports.getNotificationById = async (req, res) => {
     const { id } = req.params;
 
     const [rows] = await pool.execute(
-      `SELECT * FROM notifications_log WHERE id = ?`, [id]
+      `SELECT * FROM notifications_log WHERE id = ?`,
+      [id],
     );
 
     if (!rows.length) {
@@ -78,16 +102,16 @@ exports.getNotificationById = async (req, res) => {
   }
 };
 
-
 exports.getByTransferId = async (req, res) => {
   try {
     const { transferId } = req.params;
 
-    const [rows] = await pool.execute(`
+    const [rows] = await pool.execute(
+      `
       SELECT * FROM notifications_log
       WHERE transfer_id = ?
       ORDER BY created_at ASC`,
-      [transferId]
+      [transferId],
     );
 
     res.json({ total: rows.length, data: rows });
@@ -96,7 +120,6 @@ exports.getByTransferId = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-
 
 exports.getStats = async (req, res) => {
   try {

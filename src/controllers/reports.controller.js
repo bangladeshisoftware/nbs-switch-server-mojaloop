@@ -1,3 +1,10 @@
+/**************************************************************************
+ * Copyright © 2026 Bangladeshi Software Ltd. All rights reserved.
+ * Distributed under the license terms specified in this repository.
+ *
+ * ORIGINAL AUTHOR: Muhammad Nasim (Developer)
+ **************************************************************************/
+
 const { pool } = require('../config/db');
 const ExcelJS = require('exceljs');
 
@@ -408,7 +415,7 @@ exports.exportExcel = async (req, res) => {
     };
     totalRow.getCell(5).numFmt = '#,##0.00';
 
-   // finally response.
+    // finally response.
     const filename = `r-switch-report-${new Date().toISOString().slice(0, 10)}.xlsx`;
     res.setHeader(
       'Content-Type',

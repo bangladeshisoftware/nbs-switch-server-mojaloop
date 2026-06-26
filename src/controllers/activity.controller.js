@@ -1,3 +1,10 @@
+/**************************************************************************
+ * Copyright © 2026 Bangladeshi Software Ltd. All rights reserved.
+ * Distributed under the license terms specified in this repository.
+ *
+ * ORIGINAL AUTHOR: Muhammad Nasim (Developer)
+ **************************************************************************/
+
 const { pool } = require('../config/db');
 
 exports.getLogs = async (req, res) => {
@@ -6,47 +13,62 @@ exports.getLogs = async (req, res) => {
       type,
       username,
       ip_address,
-      page  = 1,
+      page = 1,
       limit = 50,
       from,
       to,
     } = req.query;
 
     const conditions = [];
-    const values     = [];
+    const values = [];
 
-    if (type)       { conditions.push(`type = ?`);                    values.push(type); }
-    if (username)   { conditions.push(`username LIKE ?`);             values.push(`%${username}%`); }
-    if (ip_address) { conditions.push(`ip_address LIKE ?`);           values.push(`%${ip_address}%`); }
-    if (from)       { conditions.push(`login_time >= ?`);             values.push(from); }
-    if (to)         { conditions.push(`login_time <= ?`);             values.push(to); }
+    if (type) {
+      conditions.push(`type = ?`);
+      values.push(type);
+    }
+    if (username) {
+      conditions.push(`username LIKE ?`);
+      values.push(`%${username}%`);
+    }
+    if (ip_address) {
+      conditions.push(`ip_address LIKE ?`);
+      values.push(`%${ip_address}%`);
+    }
+    if (from) {
+      conditions.push(`login_time >= ?`);
+      values.push(from);
+    }
+    if (to) {
+      conditions.push(`login_time <= ?`);
+      values.push(to);
+    }
 
-    const where  = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
     const [[{ total }]] = await pool.execute(
-      `SELECT COUNT(*) as total FROM activity_logs ${where}`, values
+      `SELECT COUNT(*) as total FROM activity_logs ${where}`,
+      values,
     );
 
     const [rows] = await pool.execute(
       `SELECT * FROM activity_logs ${where}
        ORDER BY login_time DESC
        LIMIT ? OFFSET ?`,
-      [...values, parseInt(limit), offset]
+      [...values, parseInt(limit), offset],
     );
 
     res.json({
       total,
-      page:  parseInt(page),
+      page: parseInt(page),
       limit: parseInt(limit),
       pages: Math.ceil(total / parseInt(limit)),
-      data:  rows,
+      data: rows,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
-
 
 exports.getStats = async (req, res) => {
   try {
