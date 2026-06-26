@@ -1,7 +1,13 @@
+/**************************************************************************
+ * Copyright © 2026 Bangladeshi Software Ltd. All rights reserved.
+ * Distributed under the license terms specified in this repository.
+ *
+ * ORIGINAL AUTHOR: Muhammad Nasim <cao.bangladeshisoftware@gmail.com>
+ **************************************************************************/
+
 const { consumer, TOPICS } = require('../config/kafka');
 const { pool } = require('../config/db');
 const { v4: uuidv4 } = require('uuid');
-
 
 function decodePayload(payload) {
   if (!payload) return {};
@@ -25,7 +31,6 @@ function decodePayload(payload) {
 
   return {};
 }
-
 
 //  MOJALOOP PAYLOAD EXTRACTOR
 function extractPayload(raw) {
@@ -118,7 +123,6 @@ async function getTransfer(conn, transferId) {
   return rows[0] || null;
 }
 
-
 //  1. PREPARE -> RECEIVED
 async function handlePrepare(raw) {
   const conn = await pool.getConnection();
@@ -175,7 +179,6 @@ async function handlePrepare(raw) {
     );
 
     await conn.commit();
-
   } catch (err) {
     await conn.rollback();
   } finally {
@@ -568,7 +571,6 @@ async function handleNotification(raw) {
         raw,
       );
     }
-
   } catch (err) {
     null;
   } finally {
