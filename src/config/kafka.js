@@ -1,3 +1,10 @@
+/**************************************************************************
+ * Copyright © 2026 Bangladeshi Software Ltd. All rights reserved.
+ * Distributed under the license terms specified in this repository.
+ *
+ * ORIGINAL AUTHOR: Muhammad Nasim <cao.bangladeshisoftware@gmail.com>
+ **************************************************************************/
+
 const { Kafka } = require('kafkajs');
 require('dotenv').config();
 
