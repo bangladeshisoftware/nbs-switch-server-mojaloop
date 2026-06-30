@@ -157,9 +157,33 @@ The server starts on `PORT` (default `4000`) and automatically connects the Kafk
 
 R Switch uses **OTP-based two-factor authentication** for switch operators. DFSP portals use a separate token flow.
 
+### Default Login Setup
+
+Before using the default credentials, update the default user's email address in your database so the OTP can be delivered to a valid email.
+
+**Users Table**
+
+Replace the default email with your own email address.
+
+**Example:**
+
+| Field | Value |
+|-------|-------|
+| Email | `your-email@example.com` |
+
+After updating the email, log in using the default credentials:
+
+| Username | Password |
+|----------|----------|
+| `newuser` | `newuser` |
+
+> **Note**
+> The OTP will be sent to the email address configured in the `users` table.
+
+
 ### Switch Operator Login (2-step)
 
-**Step 1 — Submit credentials:**
+**Step 1 - Submit credentials:**
 
 ```
 POST /api/auth/login
