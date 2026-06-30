@@ -1,4 +1,4 @@
-# R Switch - Mojaloop Payment Switch Server
+# NB Switch - Mojaloop Payment Switch Server
 
 A production-grade **National Payment Switch** built on [Mojaloop](https://mojaloop.io/) open-source infrastructure. R Switch acts as the central hub connecting multiple DFSPs (Digital Financial Service Providers), consuming real-time Kafka events from the Mojaloop core, managing settlement windows, tracking positions, and exposing a full admin portal API for switch operators.
 
