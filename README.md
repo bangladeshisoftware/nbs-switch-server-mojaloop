@@ -786,4 +786,4 @@ Payload decoding handles both raw JSON and `base64,<data>` encoded Mojaloop mess
 
 ## License
 
-Private - R Switch / Bangladeshi Software LTD. All rights reserved.
+Private - NB Switch / Bangladeshi Software LTD. All rights reserved.
