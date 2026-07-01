@@ -1,7 +1,7 @@
 {
-  "name": "r-switch-portal-backend",
+  "name": "nb-switch-portal-backend",
   "version": "1.0.0",
-  "description": "R Switch Portal Backend API - Mojaloop Hub Management",
+  "description": "NB Switch Portal Backend API - Mojaloop Hub Management",
   "main": "src/app.js",
   "scripts": {
     "start": "node src/app.js",

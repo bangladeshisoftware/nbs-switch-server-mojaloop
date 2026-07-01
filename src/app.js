@@ -80,7 +80,7 @@ async function start() {
   await startConsumer();
 
   server.listen(PORT, () => {
-    console.log(`R Switch Portal Backend running on port ${PORT}`);
+    console.log(`NB Switch Portal Backend running on port ${PORT}`);
     console.log(`Kafka consumer listening to Mojaloop topics`);
     console.log(`Server timeout: 3 minutes (settlement routes)`);
   });

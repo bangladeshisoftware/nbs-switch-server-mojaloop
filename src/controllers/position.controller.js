@@ -456,7 +456,7 @@ exports.depositFunds = async (req, res) => {
           transferId: uuidv4(),
           externalReference: reason || `deposit-${Date.now()}`,
           action: 'recordFundsIn',
-          reason: reason || 'Manual deposit from R Switch',
+          reason: reason || 'Manual deposit from NB Switch',
           amount: { amount: String(amount), currency },
         },
         {
@@ -483,7 +483,7 @@ exports.depositFunds = async (req, res) => {
         account_id,
         currency,
         amount,
-        reason || 'Manual deposit from R Switch',
+        reason || 'Manual deposit from NB Switch',
       ],
     );
     steps.db_log = 'ok';

@@ -337,7 +337,7 @@ exports.createDfsp = async (req, res) => {
         try {
           await sendEmail({
             to: admin_email,
-            subject: `[R Switch] DFSP Portal Access — ${name}`,
+            subject: `NB Switch DFSP Portal Access — ${name}`,
             html: `
 <!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
@@ -361,12 +361,12 @@ exports.createDfsp = async (req, res) => {
 <div class="wrap"><div class="card">
   <div class="hdr">
     <h1>⬡ DFSP Portal Access Created</h1>
-    <p>R Switch Portal — Mojaloop Financial Switch</p>
+    <p>NB Switch Portal — Mojaloop Financial Switch</p>
   </div>
   <div class="body">
     <p style="color:#999;font-size:12px;margin-bottom:18px">
       Dear <strong style="color:#fff">${admin_full_name || admin_username}</strong>,<br>
-      Your DFSP Portal admin account has been created by R Switch.
+      Your DFSP Portal admin account has been created by NB Switch.
     </p>
     <div class="row"><span class="lbl">DFSP ID</span><span class="val">${dfsp_id}</span></div>
     <div class="row"><span class="lbl">DFSP Name</span><span class="val">${name}</span></div>
@@ -380,7 +380,7 @@ exports.createDfsp = async (req, res) => {
       Keep your credentials secure and do not share.</p>
     </div>
   </div>
-  <div class="footer">R Switch Portal · Automated Access Email · Do not reply</div>
+  <div class="footer">NB Switch Portal · Automated Access Email · Do not reply</div>
 </div></div>
 </body></html>`,
           });
@@ -403,7 +403,7 @@ exports.createDfsp = async (req, res) => {
     if (err.code === 'ER_DUP_ENTRY')
       return res
         .status(409)
-        .json({ error: 'DFSP already exists in R Switch DB', steps });
+        .json({ error: 'DFSP already exists in NB Switch DB', steps });
     res.status(500).json({ error: err.message, steps });
   }
 };

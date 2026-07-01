@@ -38,7 +38,7 @@ async function sendEmail({ to, subject, html, text }) {
   const mailOptions = {
     from:
       process.env.SMTP_FROM ||
-      `"R Switch Portal" <${process.env.SMTP_USER || 'smtpuser@gmail.com'}>`,
+      `"NB Switch Portal" <${process.env.SMTP_USER || 'smtpuser@gmail.com'}>`,
     to,
     subject,
     html,
@@ -55,7 +55,7 @@ async function sendEmail({ to, subject, html, text }) {
 
 //  OTP EMAIL TEMPLATE
 async function sendOTPEmail({ to, username, otp }) {
-  const subject = 'R Switch Portal — Login OTP';
+  const subject = 'NB Switch Portal — Login OTP';
 
   const html = `
 <!DOCTYPE html>
@@ -177,7 +177,7 @@ background-image: linear-gradient(120deg, #a1c4fd 0%, #c2e9fb 100%);
     <div class="card">
 
       <div class="header">
-        <h1>R SWITCH PORTAL</h1>
+        <h1>NB SWITCH PORTAL</h1>
         <p>Mojaloop Financial Switch Management</p>
       </div>
 
@@ -188,7 +188,7 @@ background-image: linear-gradient(120deg, #a1c4fd 0%, #c2e9fb 100%);
         </p>
 
         <p class="info">
-          We received a request to access your secure R Switch Portal account.
+          We received a request to access your secure NB Switch Portal account.
           Please use the one-time password (OTP) below to complete your authentication.
         </p>
 
@@ -206,7 +206,7 @@ background-image: linear-gradient(120deg, #a1c4fd 0%, #c2e9fb 100%);
       </div>
 
       <div class="footer">
-        <div class="brand">R Switch Portal</div>
+        <div class="brand">NB Switch Portal</div>
         Presented by Bangladeshi Software Ltd.<br/>
         Secure Infrastructure for Digital Financial Ecosystems<br/><br/>
         This is an automated security message. Please do not reply.
@@ -252,7 +252,7 @@ async function sendSettlementEmail({ to, dfspName, dfspId, settlementData }) {
         })
       : 'N/A';
 
-  const subject = `[R Switch] Settlement Completed — ${dfspId} | ID: ${settlementId}`;
+  const subject = `NB Switch Settlement Completed — ${dfspId} | ID: ${settlementId}`;
 
   const html = `
 <!DOCTYPE html>
@@ -309,7 +309,7 @@ async function sendSettlementEmail({ to, dfspName, dfspId, settlementData }) {
       <div class="hdr-icon">⬡</div>
       <div>
         <h1>Settlement Completed</h1>
-        <p>R Switch Portal — Mojaloop Financial Switch</p>
+        <p>NB Switch Portal — Mojaloop Financial Switch</p>
       </div>
     </div>
 
@@ -388,13 +388,13 @@ async function sendSettlementEmail({ to, dfspName, dfspId, settlementData }) {
         <p>
           Position has been reset to 0 after settlement.<br>
           A new settlement window is now open for the next period.<br>
-          For any queries, contact the R Switch operations team.
+          For any queries, contact the NB Switch operations team.
         </p>
       </div>
     </div>
 
     <div class="footer">
-      R Switch Portal &nbsp;·&nbsp; Automated Settlement Notification &nbsp;·&nbsp; Do not reply<br>
+      NB Switch Portal &nbsp;·&nbsp; Automated Settlement Notification &nbsp;·&nbsp; Do not reply<br>
       ${new Date().getFullYear()} © Mojaloop Financial Switch
     </div>
   </div>

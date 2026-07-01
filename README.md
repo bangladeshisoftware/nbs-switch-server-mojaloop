@@ -1,8 +1,8 @@
 # NB Switch - Mojaloop Payment Switch Server
 
-A production-grade **National Payment Switch** built on [Mojaloop](https://mojaloop.io/) open-source infrastructure. R Switch acts as the central hub connecting multiple DFSPs (Digital Financial Service Providers), consuming real-time Kafka events from the Mojaloop core, managing settlement windows, tracking positions, and exposing a full admin portal API for switch operators.
+A production-grade **National Payment Switch** built on [Mojaloop](https://mojaloop.io/) open-source infrastructure. NB Switch acts as the central hub connecting multiple DFSPs (Digital Financial Service Providers), consuming real-time Kafka events from the Mojaloop core, managing settlement windows, tracking positions, and exposing a full admin portal API for switch operators.
 
-> **Project Context:** R Switch is designed as the interoperability layer for a national payment network (BDT / Bangladesh), coordinating FSPIOP flows between participant banks and mobile money operators.
+> **Project Context:** NB Switch is designed as the interoperability layer for a national payment network (BDT / Bangladesh), coordinating FSPIOP flows between participant banks and mobile money operators.
 
 ---
 
@@ -38,7 +38,7 @@ A production-grade **National Payment Switch** built on [Mojaloop](https://mojal
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                      R Switch Server                            │
+│                      NB Switch Server                            │
 │                                                                 │
 │  ┌─────────────────┐   ┌──────────────────┐  ┌─────────────┐   │
 │  │   REST API      │   │  Kafka Consumer  │  │  Scheduler  │   │
@@ -117,7 +117,7 @@ SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_USER=noreply@example.com
 SMTP_PASS=your_smtp_password
-SMTP_FROM="R Switch Portal" <noreply@example.com>
+SMTP_FROM="NB Switch Portal" <noreply@example.com>
 
 # Portal
 DFSP_PORTAL_URL=https://your.dfsp-portal.com
@@ -155,7 +155,7 @@ The server starts on `PORT` (default `4000`) and automatically connects the Kafk
 
 ## Authentication
 
-R Switch uses **OTP-based two-factor authentication** for switch operators. DFSP portals use a separate token flow.
+NB Switch uses **OTP-based two-factor authentication** for switch operators. DFSP portals use a separate token flow.
 
 ### Default Login Setup
 
@@ -341,10 +341,10 @@ Manage the Mojaloop Hub participant accounts, settlement models, and ALS oracles
 
 ### Kafka Consumer Pipeline
 
-R Switch subscribes to **8 Mojaloop Kafka topics** and processes each message transactionally in MySQL. The consumer starts automatically with the server.
+NB Switch subscribes to **8 Mojaloop Kafka topics** and processes each message transactionally in MySQL. The consumer starts automatically with the server.
 
 ```
-Mojaloop Core → Kafka Topics → R Switch Consumer → MySQL
+Mojaloop Core → Kafka Topics → NB Switch Consumer → MySQL
 ```
 
 **Subscribed topics:**
@@ -450,7 +450,7 @@ Validates that the target account is `SETTLEMENT` (not `POSITION`) before callin
 
 ## Settlement
 
-R Switch implements **Deferred Net Settlement (DNS)** using the Mojaloop Settlement Service.
+NB Switch implements **Deferred Net Settlement (DNS)** using the Mojaloop Settlement Service.
 
 ### Settlement Window Flow
 
@@ -545,7 +545,7 @@ Auto-matching runs after `runReconciliation`: transfers with both SEND and RECEI
 
 ## Notifications Log
 
-R Switch records every Mojaloop notification event consumed from Kafka (`topic-notification-event`) into `notifications_log`, tracking which DFSP received which outcome.
+NB Switch records every Mojaloop notification event consumed from Kafka (`topic-notification-event`) into `notifications_log`, tracking which DFSP received which outcome.
 
 | Method | Endpoint                                  | Description                                                                            |
 | ------ | ----------------------------------------- | -------------------------------------------------------------------------------------- |

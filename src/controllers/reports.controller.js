@@ -147,7 +147,7 @@ exports.exportExcel = async (req, res) => {
     const s = summary[0];
 
     const wb = new ExcelJS.Workbook();
-    wb.creator = 'R Switch Portal';
+    wb.creator = 'NB Switch Portal';
     wb.created = new Date();
 
     const C = {
@@ -172,7 +172,7 @@ exports.exportExcel = async (req, res) => {
     // Title
     summary_sheet.mergeCells('A1:C1');
     const titleCell = summary_sheet.getCell('A1');
-    titleCell.value = '⬡ R SWITCH PORTAL — Transfer Report';
+    titleCell.value = '⬡ NB SWITCH PORTAL - Transfer Report';
     titleCell.font = {
       bold: true,
       size: 16,
